@@ -68,8 +68,7 @@ struct st7735 {
 // ------------------------------------------------------------------------------------------------------------------------
 
 static void gpio_set_output(st7735_t *disp, int pin) {
-    int reg = pin / 10;
-    int shift = (pin % 10) * 3;
+    int reg = pin / 10, shift = (pin % 10) * 3;
     disp->gpio[reg] = (disp->gpio[reg] & (uint32_t)~(7 << shift)) | (1 << shift);
 }
 static void gpio_set(st7735_t *disp, int pin) { disp->gpio[GPIO_SET0] = 1 << pin; }
@@ -263,10 +262,9 @@ st7735_t *st7735_init(int dc_pin, int bl_pin, uint32_t spi_speed, int rotation) 
         return NULL;
     }
 
-    uint8_t mode = SPI_MODE_0;
-    uint8_t bits = 8;
-    ioctl(disp->spi_fd, SPI_IOC_WR_MODE, &mode);
-    ioctl(disp->spi_fd, SPI_IOC_WR_BITS_PER_WORD, &bits);
+    uint8_t spi_mode = SPI_MODE_0, spi_bits = 8;
+    ioctl(disp->spi_fd, SPI_IOC_WR_MODE, &spi_mode);
+    ioctl(disp->spi_fd, SPI_IOC_WR_BITS_PER_WORD, &spi_bits);
     ioctl(disp->spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &spi_speed);
 
     int mem_fd = open("/dev/gpiomem", O_RDWR | O_SYNC);
@@ -649,11 +647,8 @@ int st7735_text_font(st7735_t *disp, int x, int y, const char *str, const fontin
     if (!font || !font->data || !str)
         return 0;
     int start_x = x;
-    while (*str) {
-        int w = st7735_char_font(disp, x, y, *str, font, fg, bg, mono);
-        x += w + spacing;
-        str++;
-    }
+    while (*str)
+        x += st7735_char_font(disp, x, y, *str++, font, fg, bg, mono) + spacing;
     return x - start_x;
 }
 
