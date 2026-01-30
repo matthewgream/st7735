@@ -134,11 +134,11 @@ int main(int argc, char *argv[]) {
     /* Test 8: Built-in 5x7 text */
     printf("[8] st7735_text - built-in 5x7 font\n");
     st7735_fill(disp, COLOR_BLACK);
-    st7735_text(disp, 5, 5, "Built-in 5x7 font", COLOR_WHITE, COLOR_BLACK);
-    st7735_text(disp, 5, 20, "ABCDEFGHIJKLMNOP", COLOR_GREEN, COLOR_BLACK);
-    st7735_text(disp, 5, 35, "abcdefghijklmnop", COLOR_RED, COLOR_BLACK);
-    st7735_text(disp, 5, 50, "0123456789!@#$%", COLOR_YELLOW, COLOR_BLACK);
-    st7735_text(disp, 5, 65, use_buffer ? "BUFFERED" : "DIRECT", COLOR_CYAN, COLOR_BLACK);
+    st7735_text(disp, 5, 5, COLOR_WHITE, COLOR_BLACK, 1, "Built-in 5x7 font");
+    st7735_text(disp, 5, 20, COLOR_GREEN, COLOR_BLACK, 1, "ABCDEFGHIJKLMNOP");
+    st7735_text(disp, 5, 35, COLOR_RED, COLOR_BLACK, 1, "abcdefghijklmnop");
+    st7735_text(disp, 5, 50, COLOR_YELLOW, COLOR_BLACK, 1, "0123456789!@#$%");
+    st7735_text(disp, 5, 65, COLOR_CYAN, COLOR_BLACK, 1, use_buffer ? "BUFFERED" : "DIRECT");
     if (use_buffer)
         st7735_flush(disp);
     sleep(3);
@@ -146,11 +146,11 @@ int main(int argc, char *argv[]) {
     /* Test 9: External font - 6x10 small */
     printf("[9] External font - Noto Mono 6x10\n");
     st7735_fill(disp, COLOR_BLACK);
-    st7735_text_font(disp, 5, 5, "External 6x10 font", &font_noto_mono6x10, COLOR_WHITE, COLOR_BLACK, true, 1);
-    st7735_text_font(disp, 5, 20, "ABCDEFGHIJKLMNOPQRSTUVWX", &font_noto_mono6x10, COLOR_GREEN, COLOR_BLACK, true, 1);
-    st7735_text_font(disp, 5, 35, "abcdefghijklmnopqrstuvwx", &font_noto_mono6x10, COLOR_RED, COLOR_BLACK, true, 1);
-    st7735_text_font(disp, 5, 50, "0123456789 !@#$%^&*()", &font_noto_mono6x10, COLOR_YELLOW, COLOR_BLACK, true, 1);
-    st7735_text_font(disp, 5, 65, "Compact text rendering", &font_noto_mono6x10, COLOR_CYAN, COLOR_BLACK, true, 1);
+    st7735_text_font(disp, 5, 5, COLOR_WHITE, COLOR_BLACK, &font_noto_mono6x10, true, 1, "External 6x10 font");
+    st7735_text_font(disp, 5, 20, COLOR_GREEN, COLOR_BLACK, &font_noto_mono6x10, true, 1, "ABCDEFGHIJKLMNOPQRSTUVWX");
+    st7735_text_font(disp, 5, 35, COLOR_RED, COLOR_BLACK, &font_noto_mono6x10, true, 1, "abcdefghijklmnopqrstuvwx");
+    st7735_text_font(disp, 5, 50, COLOR_YELLOW, COLOR_BLACK, &font_noto_mono6x10, true, 1, "0123456789 !@#$%^&*()");
+    st7735_text_font(disp, 5, 65, COLOR_CYAN, COLOR_BLACK, &font_noto_mono6x10, true, 1, "Compact text rendering");
     if (use_buffer)
         st7735_flush(disp);
     sleep(3);
@@ -158,11 +158,11 @@ int main(int argc, char *argv[]) {
     /* Test 10: External font - 23x37 large */
     printf("[10] External font - Noto Mono 23x37\n");
     st7735_fill(disp, COLOR_BLACK);
-    st7735_text_font(disp, 5, 5, "23.5", &font_noto_mono23x37, COLOR_WHITE, COLOR_BLACK, true, 1);
-    st7735_text_font(disp, 5, 45, "1013", &font_noto_mono23x37, COLOR_GREEN, COLOR_BLACK, true, 1);
+    st7735_text_font(disp, 5, 5, COLOR_WHITE, COLOR_BLACK, &font_noto_mono23x37, true, 1, "23.5");
+    st7735_text_font(disp, 5, 45, COLOR_GREEN, COLOR_BLACK, &font_noto_mono23x37, true, 1, "1013");
     /* Add units with small font */
-    st7735_text_font(disp, 105, 15, "C", &font_noto_mono6x10, COLOR_WHITE, COLOR_BLACK, true, 0);
-    st7735_text_font(disp, 105, 55, "mb", &font_noto_mono6x10, COLOR_GREEN, COLOR_BLACK, true, 0);
+    st7735_text_font(disp, 105, 15, COLOR_WHITE, COLOR_BLACK, &font_noto_mono6x10, true, 0, "C");
+    st7735_text_font(disp, 105, 55, COLOR_GREEN, COLOR_BLACK, &font_noto_mono6x10, true, 0, "mb");
     if (use_buffer)
         st7735_flush(disp);
     sleep(3);
@@ -173,12 +173,12 @@ int main(int argc, char *argv[]) {
     st7735_rect(disp, 0, 0, 160, 80, COLOR_WHITE);
     st7735_line(disp, 0, 18, 160, 18, COLOR_WHITE);
     /* Title with small font */
-    st7735_text_font(disp, 50, 4, "WEATHER", &font_noto_mono6x10, COLOR_CYAN, COLOR_BLACK, true, 1);
+    st7735_text_font(disp, 50, 4, COLOR_CYAN, COLOR_BLACK, &font_noto_mono6x10, true, 1, "WEATHER");
     /* Large temperature */
-    st7735_text_font(disp, 5, 25, "23.5", &font_noto_mono23x37, COLOR_WHITE, COLOR_BLACK, true, 1);
-    st7735_text_font(disp, 100, 30, "C", &font_noto_mono6x10, COLOR_WHITE, COLOR_BLACK, true, 0);
+    st7735_text_font(disp, 5, 25, COLOR_WHITE, COLOR_BLACK, &font_noto_mono23x37, true, 1, "23.5");
+    st7735_text_font(disp, 100, 30, COLOR_WHITE, COLOR_BLACK, &font_noto_mono6x10, true, 0, "C");
     /* Humidity with small font */
-    st7735_text_font(disp, 5, 65, "Humidity: 45%", &font_noto_mono6x10, COLOR_GREEN, COLOR_BLACK, true, 1);
+    st7735_text_font(disp, 5, 65, COLOR_GREEN, COLOR_BLACK, &font_noto_mono6x10, true, 1, "Humidity: 45%");
     /* Status indicator */
     st7735_fill_circle(disp, 145, 55, 8, COLOR_GREEN);
     if (use_buffer)
@@ -188,8 +188,8 @@ int main(int argc, char *argv[]) {
     /* Test 12: Variable width font test */
     printf("[12] Variable width font - Noto Vari 20x28\n");
     st7735_fill(disp, COLOR_BLACK);
-    st7735_text_font(disp, 5, 5, "Variable", &font_noto_vari20x28, COLOR_WHITE, COLOR_BLACK, false, 1);
-    st7735_text_font(disp, 5, 40, "Width", &font_noto_vari20x28, COLOR_YELLOW, COLOR_BLACK, false, 1);
+    st7735_text_font(disp, 5, 5, COLOR_WHITE, COLOR_BLACK, &font_noto_vari20x28, false, 1, "Variable");
+    st7735_text_font(disp, 5, 40, COLOR_YELLOW, COLOR_BLACK, &font_noto_vari20x28, false, 1, "Width");
     if (use_buffer)
         st7735_flush(disp);
     sleep(3);

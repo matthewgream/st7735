@@ -6,7 +6,7 @@ CFLAGS_STRICT=-Werror -Wcast-align -Wcast-qual \
 	-Wold-style-definition \
 	-Wcast-align -Wcast-qual -Wconversion \
 	-Wfloat-equal -Wformat=2 -Wformat-security \
-	-Winit-self -Wjump-misses-init \
+	-Winit-self \
 	-Wlogical-op -Wmissing-include-dirs \
 	-Wnested-externs -Wpointer-arith \
 	-Wredundant-decls -Wshadow \

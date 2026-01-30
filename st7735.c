@@ -4,7 +4,6 @@
 
 #include "st7735.h"
 
-#include <endian.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/spi/spidev.h>
@@ -49,6 +48,10 @@
 #define GPIO_SET0 7
 #define GPIO_CLR0 10
 
+#define GPIO_MMAP_SIZE 4096
+
+#define SPI_CHUNK_SIZE 4096
+
 struct st7735 {
     int spi_fd;
     volatile uint32_t *gpio;
@@ -71,20 +74,17 @@ struct st7735 {
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
 
-static void gpio_set_output(st7735_t *disp, int pin) {
+static inline void gpio_set_output(const st7735_t *disp, int pin) {
     int reg = pin / 10, shift = (pin % 10) * 3;
     disp->gpio[reg] = (disp->gpio[reg] & (uint32_t)~(7 << shift)) | (1 << shift);
 }
-static void gpio_set(st7735_t *disp, int pin) { disp->gpio[GPIO_SET0] = 1 << pin; }
-static void gpio_clr(st7735_t *disp, int pin) { disp->gpio[GPIO_CLR0] = 1 << pin; }
+static inline void gpio_set(const st7735_t *disp, int pin) { disp->gpio[GPIO_SET0] = 1 << pin; }
+static inline void gpio_clr(const st7735_t *disp, int pin) { disp->gpio[GPIO_CLR0] = 1 << pin; }
 
 // ------------------------------------------------------------------------------------------------------------------------
 
-static void spi_write(st7735_t *disp, const uint8_t *data, size_t len) {
-    struct spi_ioc_transfer tr = {
-        .tx_buf = (unsigned long)data,
-        .len = (unsigned int)len,
-    };
+static inline void spi_write(const st7735_t *disp, const uint8_t *buf, size_t len) {
+    const struct spi_ioc_transfer tr = {.tx_buf = (unsigned long)buf, .len = (unsigned int)len};
     if (ioctl(disp->spi_fd, SPI_IOC_MESSAGE(1), &tr) < 0)
         perror("ioctl");
 }
@@ -92,19 +92,18 @@ static void spi_write(st7735_t *disp, const uint8_t *data, size_t len) {
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
 
-static void cmd(st7735_t *disp, uint8_t c) {
+static void cmd(const st7735_t *disp, uint8_t c) {
     gpio_clr(disp, disp->dc_pin);
     spi_write(disp, &c, 1);
 }
-static void dat(st7735_t *disp, uint8_t d) {
+static void dat(const st7735_t *disp, uint8_t d) {
     gpio_set(disp, disp->dc_pin);
     spi_write(disp, &d, 1);
 }
-static void dat_buf(st7735_t *disp, const uint8_t *buf, size_t len) {
+static void dat_buf(const st7735_t *disp, const uint8_t *buf, size_t len) {
     gpio_set(disp, disp->dc_pin);
-    const size_t CHUNK = 4096;
     while (len > 0) {
-        const size_t n = (len < CHUNK) ? len : CHUNK;
+        const size_t n = (len < SPI_CHUNK_SIZE) ? len : SPI_CHUNK_SIZE;
         spi_write(disp, buf, n);
         buf += n;
         len -= n;
@@ -114,7 +113,7 @@ static void dat_buf(st7735_t *disp, const uint8_t *buf, size_t len) {
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
 
-static void set_window(st7735_t *disp, int x0, int y0, int x1, int y1) {
+static void set_window(const st7735_t *disp, int x0, int y0, int x1, int y1) {
     cmd(disp, ST7735_CASET);
     dat(disp, 0x00);
     dat(disp, (uint8_t)(x0 + disp->offset_left));
@@ -130,7 +129,7 @@ static void set_window(st7735_t *disp, int x0, int y0, int x1, int y1) {
 
 // ------------------------------------------------------------------------------------------------------------------------
 
-static void init_seq(st7735_t *disp) {
+static void init_seq(const st7735_t *disp) {
     cmd(disp, ST7735_SWRESET);
     usleep(150000);
 
@@ -229,73 +228,55 @@ st7735_t *st7735_init(int dc_pin, int bl_pin, uint32_t spi_speed, int rotation) 
     disp->bl_pin = (uint8_t)bl_pin;
     disp->buffer = NULL;
 
-    switch (rotation) {
-    case 0:
+    if (rotation == 0 || rotation == 180) {
         disp->width = ST7735_WIDTH;
         disp->height = ST7735_HEIGHT;
         disp->offset_left = (ST7735_COLS - ST7735_WIDTH) / 2;
         disp->offset_top = (ST7735_ROWS - ST7735_HEIGHT) / 2;
-        disp->madctl = 0x00;
-        break;
-    case 90:
+    } else {
         disp->width = ST7735_HEIGHT;
         disp->height = ST7735_WIDTH;
         disp->offset_left = (ST7735_ROWS - ST7735_HEIGHT) / 2;
         disp->offset_top = (ST7735_COLS - ST7735_WIDTH) / 2;
-        disp->madctl = 0x60;
-        break;
-    case 180:
-        disp->width = ST7735_WIDTH;
-        disp->height = ST7735_HEIGHT;
-        disp->offset_left = (ST7735_COLS - ST7735_WIDTH) / 2;
-        disp->offset_top = (ST7735_ROWS - ST7735_HEIGHT) / 2;
-        disp->madctl = 0xC0;
-        break;
-    case 270:
-    default:
-        disp->width = ST7735_HEIGHT;
-        disp->height = ST7735_WIDTH;
-        disp->offset_left = (ST7735_ROWS - ST7735_HEIGHT) / 2;
-        disp->offset_top = (ST7735_COLS - ST7735_WIDTH) / 2;
-        disp->madctl = 0xA0;
-        break;
     }
-    disp->madctl |= 0x08;
+
+    if (rotation == 0)
+        disp->madctl = 0x00 | 0x08;
+    else if (rotation == 90)
+        disp->madctl = 0x60 | 0x08;
+    else if (rotation == 180)
+        disp->madctl = 0xC0 | 0x08;
+    else
+        disp->madctl = 0xA0 | 0x08;
 
     disp->pixels = disp->width * disp->height;
     disp->tmpbuf = malloc(disp->pixels * sizeof(uint16_t));
     if (!disp->tmpbuf) {
         perror("malloc");
-        free(disp);
-        return NULL;
+        goto failed;
     }
 
     disp->spi_fd = open("/dev/spidev0.1", O_RDWR);
     if (disp->spi_fd < 0) {
         perror("open: /dev/spidev0.1");
-        free(disp);
-        return NULL;
+        goto failed;
     }
-
     const uint8_t spi_mode = SPI_MODE_0, spi_bits = 8;
-    ioctl(disp->spi_fd, SPI_IOC_WR_MODE, &spi_mode);
-    ioctl(disp->spi_fd, SPI_IOC_WR_BITS_PER_WORD, &spi_bits);
-    ioctl(disp->spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &spi_speed);
+    if (ioctl(disp->spi_fd, SPI_IOC_WR_MODE, &spi_mode) < 0 || ioctl(disp->spi_fd, SPI_IOC_WR_BITS_PER_WORD, &spi_bits) < 0 || ioctl(disp->spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &spi_speed) < 0) {
+        perror("ioctl: /dev/spidev0.1");
+        goto failed;
+    }
 
     const int mem_fd = open("/dev/gpiomem", O_RDWR | O_SYNC);
     if (mem_fd < 0) {
         perror("open: /dev/gpiomem");
-        close(disp->spi_fd);
-        free(disp);
-        return NULL;
+        goto failed_spi;
     }
-    disp->gpio = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, 0);
+    disp->gpio = mmap(NULL, GPIO_MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, 0);
     close(mem_fd);
     if (disp->gpio == MAP_FAILED) {
-        perror("mmap");
-        close(disp->spi_fd);
-        free(disp);
-        return NULL;
+        perror("mmap: /dev/gpiomem");
+        goto failed_spi;
     }
 
     gpio_set_output(disp, dc_pin);
@@ -305,6 +286,12 @@ st7735_t *st7735_init(int dc_pin, int bl_pin, uint32_t spi_speed, int rotation) 
     init_seq(disp);
 
     return disp;
+
+failed_spi:
+    close(disp->spi_fd);
+failed:
+    free(disp);
+    return NULL;
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -320,7 +307,7 @@ void st7735_close(st7735_t *disp) {
     if (disp->gpio)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wcast-qual"
-        munmap((void *)disp->gpio, 4096);
+        munmap((void *)disp->gpio, GPIO_MMAP_SIZE);
 #pragma GCC diagnostic pop
     if (disp->spi_fd >= 0)
         close(disp->spi_fd);
@@ -332,8 +319,8 @@ void st7735_close(st7735_t *disp) {
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
 
-int st7735_width(st7735_t *disp) { return disp->width; }
-int st7735_height(st7735_t *disp) { return disp->height; }
+int st7735_width(const st7735_t *disp) { return disp->width; }
+int st7735_height(const st7735_t *disp) { return disp->height; }
 
 // ------------------------------------------------------------------------------------------------------------------------
 
@@ -360,7 +347,7 @@ void st7735_set_buffered(st7735_t *disp, bool enabled) {
     }
 }
 
-bool st7735_is_buffered(st7735_t *disp) { return disp->buffer != NULL; }
+bool st7735_is_buffered(const st7735_t *disp) { return disp->buffer != NULL; }
 
 // ------------------------------------------------------------------------------------------------------------------------
 
@@ -387,8 +374,8 @@ void st7735_pixel(st7735_t *disp, int x, int y, uint16_t color) {
     if (disp->buffer) {
         disp->buffer[y * disp->width + x] = color;
     } else {
-        set_window(disp, x, y, x, y);
         const uint8_t buf[2] = {(uint8_t)(color >> 8), (uint8_t)(color & 0xFF)};
+        set_window(disp, x, y, x, y);
         dat_buf(disp, buf, 2);
     }
 }
@@ -400,12 +387,12 @@ void st7735_fill(st7735_t *disp, uint16_t color) {
         for (size_t i = 0; i < disp->pixels; i++)
             disp->buffer[i] = color;
     } else {
-        set_window(disp, 0, 0, disp->width - 1, disp->height - 1);
         const uint8_t hi = (uint8_t)(color >> 8), lo = (uint8_t)(color & 0xFF);
         for (size_t i = 0; i < disp->pixels; i++) {
             disp->tmpbuf[i * 2] = hi;
             disp->tmpbuf[i * 2 + 1] = lo;
         }
+        set_window(disp, 0, 0, disp->width - 1, disp->height - 1);
         dat_buf(disp, disp->tmpbuf, disp->pixels * 2);
     }
 }
@@ -448,13 +435,13 @@ void st7735_fill_rect(st7735_t *disp, int x, int y, int w, int h, uint16_t color
                 if (px >= 0 && px < disp->width && py >= 0 && py < disp->height)
                     disp->buffer[py * disp->width + px] = color;
     } else {
-        set_window(disp, x, y, x + w - 1, y + h - 1);
         const uint8_t hi = (uint8_t)(color >> 8), lo = (uint8_t)(color & 0xFF);
         const size_t pixels = (size_t)(w * h);
         for (size_t i = 0; i < pixels; i++) {
             disp->tmpbuf[i * 2] = hi;
             disp->tmpbuf[i * 2 + 1] = lo;
         }
+        set_window(disp, x, y, x + w - 1, y + h - 1);
         dat_buf(disp, disp->tmpbuf, pixels * 2);
     }
 }
@@ -594,42 +581,35 @@ static const uint8_t font5x7[] = {
     0x08, 0x08, 0x2A, 0x1C, 0x08, /* 126 ~ */
 };
 
-void st7735_char(st7735_t *disp, int x, int y, char c, uint16_t color, uint16_t bg) {
+int st7735_char(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, char c) {
     if (c < 32 || c > 126)
         c = '?';
     const uint8_t *glyph = &font5x7[(c - 32) * 5];
     for (int col = 0; col < 5; col++)
         for (int row = 0; row < 7; row++)
             if (glyph[col] & (1 << row))
-                st7735_pixel(disp, x + col, y + row, color);
-            else if (bg != color)
+                st7735_pixel(disp, x + col, y + row, fg);
+            else if (bg != fg)
                 st7735_pixel(disp, x + col, y + row, bg);
     /* 1 pixel gap after char */
-    if (bg != color)
+    if (bg != fg)
         for (int row = 0; row < 7; row++)
             st7735_pixel(disp, x + 5, y + row, bg);
+    return 5;
 }
 
-void st7735_text(st7735_t *disp, int x, int y, const char *str, uint16_t color, uint16_t bg) {
-    while (*str) {
-        st7735_char(disp, x, y, *str++, color, bg);
-        x += 6; /* 5 pixels + 1 gap */
-    }
+int st7735_text(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, int spacing, const char *str) {
+    if (!str)
+        return 0;
+    const int start_x = x;
+    while (*str)
+        x += st7735_char(disp, x, y, fg, bg, *str++) + spacing;
+    return x - start_x;
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
 
-int st7735_char_width(const fontinfo_t *font, char c, bool mono) {
-    if (!font || !font->data)
-        return 0;
-    if (c < font->base)
-        return 0;
-    const int font_rows = (font->height + 7) / 8;
-    const int char_offs = ((font->width * font_rows) + 1) * (c - font->base);
-    return mono ? font->width : (int)font->data[char_offs];
-}
-
-int st7735_char_font(st7735_t *disp, int x, int y, char c, const fontinfo_t *font, uint16_t fg, uint16_t bg, bool mono) {
+int st7735_char_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, const fontinfo_t *font, bool mono, char c) {
     if (!font || !font->data)
         return 0;
     if (c < font->base)
@@ -655,12 +635,12 @@ int st7735_char_font(st7735_t *disp, int x, int y, char c, const fontinfo_t *fon
     return char_width;
 }
 
-int st7735_text_font(st7735_t *disp, int x, int y, const char *str, const fontinfo_t *font, uint16_t fg, uint16_t bg, bool mono, int spacing) {
+int st7735_text_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, const fontinfo_t *font, bool mono, int spacing, const char *str) {
     if (!font || !font->data || !str)
         return 0;
     const int start_x = x;
     while (*str)
-        x += st7735_char_font(disp, x, y, *str++, font, fg, bg, mono) + spacing;
+        x += st7735_char_font(disp, x, y, fg, bg, font, mono, *str++) + spacing;
     return x - start_x;
 }
 
