@@ -368,7 +368,7 @@ void st7735_flush(st7735_t *disp) {
     if (!disp->buffer)
         return;
     set_window(disp, 0, 0, disp->width - 1, disp->height - 1);
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     dat_buf(disp, (const uint8_t *)disp->buffer, disp->pixels * 2);
 #else
     for (size_t i = 0; i < disp->pixels; i++) {
