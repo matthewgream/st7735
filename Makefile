@@ -20,16 +20,21 @@ LDFLAGS = -lm
 SRCS = st7735.c fonts.c
 OBJS = $(SRCS:.c=.o)
 
-all: test
+all: test mock
 
 test: test.o $(OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
+mock: mock.o $(OBJS)
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+%.o: %.c
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Dependencies
 test.o: test.c st7735.h fonts.h
+mock.o: mock.c st7735.h fonts.h
 st7735.o: st7735.c st7735.h
 fonts.o: fonts.c fonts.h
 

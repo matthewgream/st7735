@@ -4,6 +4,8 @@
 
 #include "st7735.h"
 
+#include <endian.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <linux/spi/spidev.h>
 #include <stdio.h>
@@ -60,8 +62,10 @@ struct st7735 {
     uint8_t offset_top;
     uint8_t madctl;
 
+    size_t pixels;
+    uint8_t *tmpbuf;
+
     uint16_t *buffer;
-    bool buffered;
 };
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -81,7 +85,8 @@ static void spi_write(st7735_t *disp, const uint8_t *data, size_t len) {
         .tx_buf = (unsigned long)data,
         .len = (unsigned int)len,
     };
-    ioctl(disp->spi_fd, SPI_IOC_MESSAGE(1), &tr);
+    if (ioctl(disp->spi_fd, SPI_IOC_MESSAGE(1), &tr) < 0)
+        perror("ioctl");
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -99,7 +104,7 @@ static void dat_buf(st7735_t *disp, const uint8_t *buf, size_t len) {
     gpio_set(disp, disp->dc_pin);
     const size_t CHUNK = 4096;
     while (len > 0) {
-        size_t n = (len < CHUNK) ? len : CHUNK;
+        const size_t n = (len < CHUNK) ? len : CHUNK;
         spi_write(disp, buf, n);
         buf += n;
         len -= n;
@@ -194,12 +199,12 @@ static void init_seq(st7735_t *disp) {
     dat(disp, (uint8_t)(disp->height + disp->offset_top - 1));
 
     cmd(disp, ST7735_GMCTRP1);
-    uint8_t gp[] = {0x02, 0x1c, 0x07, 0x12, 0x37, 0x32, 0x29, 0x2d, 0x29, 0x25, 0x2B, 0x39, 0x00, 0x01, 0x03, 0x10};
+    const uint8_t gp[] = {0x02, 0x1c, 0x07, 0x12, 0x37, 0x32, 0x29, 0x2d, 0x29, 0x25, 0x2B, 0x39, 0x00, 0x01, 0x03, 0x10};
     for (int i = 0; i < 16; i++)
         dat(disp, gp[i]);
 
     cmd(disp, ST7735_GMCTRN1);
-    uint8_t gn[] = {0x03, 0x1d, 0x07, 0x06, 0x2E, 0x2C, 0x29, 0x2D, 0x2E, 0x2E, 0x37, 0x3F, 0x00, 0x00, 0x02, 0x10};
+    const uint8_t gn[] = {0x03, 0x1d, 0x07, 0x06, 0x2E, 0x2C, 0x29, 0x2D, 0x2E, 0x2E, 0x37, 0x3F, 0x00, 0x00, 0x02, 0x10};
     for (int i = 0; i < 16; i++)
         dat(disp, gn[i]);
 
@@ -215,12 +220,13 @@ static void init_seq(st7735_t *disp) {
 
 st7735_t *st7735_init(int dc_pin, int bl_pin, uint32_t spi_speed, int rotation) {
     st7735_t *disp = calloc(1, sizeof(st7735_t));
-    if (!disp)
+    if (!disp) {
+        perror("calloc");
         return NULL;
+    }
 
     disp->dc_pin = (uint8_t)dc_pin;
     disp->bl_pin = (uint8_t)bl_pin;
-    disp->buffered = false;
     disp->buffer = NULL;
 
     switch (rotation) {
@@ -256,28 +262,37 @@ st7735_t *st7735_init(int dc_pin, int bl_pin, uint32_t spi_speed, int rotation) 
     }
     disp->madctl |= 0x08;
 
-    disp->spi_fd = open("/dev/spidev0.1", O_RDWR);
-    if (disp->spi_fd < 0) {
+    disp->pixels = disp->width * disp->height;
+    disp->tmpbuf = malloc(disp->pixels * sizeof(uint16_t));
+    if (!disp->tmpbuf) {
+        perror("malloc");
         free(disp);
         return NULL;
     }
 
-    uint8_t spi_mode = SPI_MODE_0, spi_bits = 8;
+    disp->spi_fd = open("/dev/spidev0.1", O_RDWR);
+    if (disp->spi_fd < 0) {
+        perror("open: /dev/spidev0.1");
+        free(disp);
+        return NULL;
+    }
+
+    const uint8_t spi_mode = SPI_MODE_0, spi_bits = 8;
     ioctl(disp->spi_fd, SPI_IOC_WR_MODE, &spi_mode);
     ioctl(disp->spi_fd, SPI_IOC_WR_BITS_PER_WORD, &spi_bits);
     ioctl(disp->spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &spi_speed);
 
-    int mem_fd = open("/dev/gpiomem", O_RDWR | O_SYNC);
+    const int mem_fd = open("/dev/gpiomem", O_RDWR | O_SYNC);
     if (mem_fd < 0) {
+        perror("open: /dev/gpiomem");
         close(disp->spi_fd);
         free(disp);
         return NULL;
     }
-
     disp->gpio = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, 0);
     close(mem_fd);
-
     if (disp->gpio == MAP_FAILED) {
+        perror("mmap");
         close(disp->spi_fd);
         free(disp);
         return NULL;
@@ -309,6 +324,8 @@ void st7735_close(st7735_t *disp) {
 #pragma GCC diagnostic pop
     if (disp->spi_fd >= 0)
         close(disp->spi_fd);
+    if (disp->tmpbuf)
+        free(disp->tmpbuf);
     free(disp);
 }
 
@@ -332,13 +349,18 @@ void st7735_backlight(st7735_t *disp, bool on) {
 void st7735_set_buffered(st7735_t *disp, bool enabled) {
     if (enabled && !disp->buffer) {
         disp->buffer = malloc(disp->width * disp->height * sizeof(uint16_t));
-        if (disp->buffer)
-            memset(disp->buffer, 0, disp->width * disp->height * sizeof(uint16_t));
+        if (!disp->buffer) {
+            perror("malloc");
+            return;
+        }
+        memset(disp->buffer, 0, disp->width * disp->height * sizeof(uint16_t));
+    } else if (!enabled && disp->buffer) {
+        free(disp->buffer);
+        disp->buffer = NULL;
     }
-    disp->buffered = enabled && (disp->buffer != NULL);
 }
 
-bool st7735_is_buffered(st7735_t *disp) { return disp->buffered; }
+bool st7735_is_buffered(st7735_t *disp) { return disp->buffer != NULL; }
 
 // ------------------------------------------------------------------------------------------------------------------------
 
@@ -346,16 +368,15 @@ void st7735_flush(st7735_t *disp) {
     if (!disp->buffer)
         return;
     set_window(disp, 0, 0, disp->width - 1, disp->height - 1);
-    size_t pixels = disp->width * disp->height;
-    uint8_t *buf = malloc(pixels * 2);
-    if (!buf)
-        return;
-    for (size_t i = 0; i < pixels; i++) {
-        buf[i * 2] = (uint8_t)(disp->buffer[i] >> 8);
-        buf[i * 2 + 1] = (uint8_t)(disp->buffer[i] & 0xFF);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    dat_buf(disp, (const uint8_t *)disp->buffer, disp->pixels * 2);
+#else
+    for (size_t i = 0; i < disp->pixels; i++) {
+        disp->tmpbuf[i * 2] = (uint8_t)(disp->buffer[i] >> 8);
+        disp->tmpbuf[i * 2 + 1] = (uint8_t)(disp->buffer[i] & 0xFF);
     }
-    dat_buf(disp, buf, pixels * 2);
-    free(buf);
+    dat_buf(disp, disp->tmpbuf, disp->pixels * 2);
+#endif
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -363,11 +384,11 @@ void st7735_flush(st7735_t *disp) {
 void st7735_pixel(st7735_t *disp, int x, int y, uint16_t color) {
     if (x < 0 || x >= disp->width || y < 0 || y >= disp->height)
         return;
-    if (disp->buffered && disp->buffer) {
+    if (disp->buffer) {
         disp->buffer[y * disp->width + x] = color;
     } else {
         set_window(disp, x, y, x, y);
-        uint8_t buf[2] = {(uint8_t)(color >> 8), (uint8_t)(color & 0xFF)};
+        const uint8_t buf[2] = {(uint8_t)(color >> 8), (uint8_t)(color & 0xFF)};
         dat_buf(disp, buf, 2);
     }
 }
@@ -375,41 +396,37 @@ void st7735_pixel(st7735_t *disp, int x, int y, uint16_t color) {
 // ------------------------------------------------------------------------------------------------------------------------
 
 void st7735_fill(st7735_t *disp, uint16_t color) {
-    if (disp->buffered && disp->buffer) {
-        size_t pixels = disp->width * disp->height;
-        for (size_t i = 0; i < pixels; i++)
+    if (disp->buffer) {
+        for (size_t i = 0; i < disp->pixels; i++)
             disp->buffer[i] = color;
     } else {
         set_window(disp, 0, 0, disp->width - 1, disp->height - 1);
-        uint8_t hi = (uint8_t)(color >> 8), lo = (uint8_t)(color & 0xFF);
-        size_t pixels = disp->width * disp->height;
-        uint8_t *buf = malloc(pixels * 2);
-        for (size_t i = 0; i < pixels; i++) {
-            buf[i * 2] = hi;
-            buf[i * 2 + 1] = lo;
+        const uint8_t hi = (uint8_t)(color >> 8), lo = (uint8_t)(color & 0xFF);
+        for (size_t i = 0; i < disp->pixels; i++) {
+            disp->tmpbuf[i * 2] = hi;
+            disp->tmpbuf[i * 2 + 1] = lo;
         }
-        dat_buf(disp, buf, pixels * 2);
-        free(buf);
+        dat_buf(disp, disp->tmpbuf, disp->pixels * 2);
     }
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
 
 void st7735_line(st7735_t *disp, int x0, int y0, int x1, int y1, uint16_t color) {
-    int dx = abs(x1 - x0), dy = abs(y1 - y0);
-    int sx = (x0 < x1) ? 1 : -1, sy = (y0 < y1) ? 1 : -1;
-    int err = dx - dy;
+    const int dx = abs(x1 - x0), dy = abs(y1 - y0);
+    const int sx = (x0 < x1) ? 1 : -1, sy = (y0 < y1) ? 1 : -1;
+    int e = dx - dy;
     while (1) {
         st7735_pixel(disp, x0, y0, color);
         if (x0 == x1 && y0 == y1)
             break;
-        int e2 = 2 * err;
+        const int e2 = 2 * e;
         if (e2 > -dy) {
-            err -= dy;
+            e -= dy;
             x0 += sx;
         }
         if (e2 < dx) {
-            err += dx;
+            e += dx;
             y0 += sy;
         }
     }
@@ -425,22 +442,20 @@ void st7735_rect(st7735_t *disp, int x, int y, int w, int h, uint16_t color) {
 }
 
 void st7735_fill_rect(st7735_t *disp, int x, int y, int w, int h, uint16_t color) {
-    if (disp->buffered && disp->buffer) {
+    if (disp->buffer) {
         for (int py = y; py < y + h; py++)
             for (int px = x; px < x + w; px++)
                 if (px >= 0 && px < disp->width && py >= 0 && py < disp->height)
                     disp->buffer[py * disp->width + px] = color;
     } else {
         set_window(disp, x, y, x + w - 1, y + h - 1);
-        uint8_t hi = (uint8_t)(color >> 8), lo = (uint8_t)(color & 0xFF);
-        size_t pixels = (size_t)(w * h);
-        uint8_t *buf = malloc(pixels * 2);
+        const uint8_t hi = (uint8_t)(color >> 8), lo = (uint8_t)(color & 0xFF);
+        const size_t pixels = (size_t)(w * h);
         for (size_t i = 0; i < pixels; i++) {
-            buf[i * 2] = hi;
-            buf[i * 2 + 1] = lo;
+            disp->tmpbuf[i * 2] = hi;
+            disp->tmpbuf[i * 2 + 1] = lo;
         }
-        dat_buf(disp, buf, pixels * 2);
-        free(buf);
+        dat_buf(disp, disp->tmpbuf, pixels * 2);
     }
 }
 
@@ -448,7 +463,7 @@ void st7735_fill_rect(st7735_t *disp, int x, int y, int w, int h, uint16_t color
 
 void st7735_circle(st7735_t *disp, int x0, int y0, int r, uint16_t color) {
     int x = r, y = 0;
-    int err = 0;
+    int e = 0;
     while (x >= y) {
         st7735_pixel(disp, x0 + x, y0 + y, color);
         st7735_pixel(disp, x0 + y, y0 + x, color);
@@ -458,23 +473,23 @@ void st7735_circle(st7735_t *disp, int x0, int y0, int r, uint16_t color) {
         st7735_pixel(disp, x0 - y, y0 - x, color);
         st7735_pixel(disp, x0 + y, y0 - x, color);
         st7735_pixel(disp, x0 + x, y0 - y, color);
-        err += 1 + 2 * (++y);
-        if (2 * (err - x) + 1 > 0)
-            err += 1 - 2 * (--x);
+        e += 1 + 2 * (++y);
+        if (2 * (e - x) + 1 > 0)
+            e += 1 - 2 * (--x);
     }
 }
 
 void st7735_fill_circle(st7735_t *disp, int x0, int y0, int r, uint16_t color) {
     int x = r, y = 0;
-    int err = 0;
+    int e = 0;
     while (x >= y) {
         st7735_line(disp, x0 - x, y0 + y, x0 + x, y0 + y, color);
         st7735_line(disp, x0 - y, y0 + x, x0 + y, y0 + x, color);
         st7735_line(disp, x0 - x, y0 - y, x0 + x, y0 - y, color);
         st7735_line(disp, x0 - y, y0 - x, x0 + y, y0 - x, color);
-        err += 1 + 2 * (++y);
-        if (2 * (err - x) + 1 > 0)
-            err += 1 - 2 * (--x);
+        e += 1 + 2 * (++y);
+        if (2 * (e - x) + 1 > 0)
+            e += 1 - 2 * (--x);
     }
 }
 
@@ -583,15 +598,12 @@ void st7735_char(st7735_t *disp, int x, int y, char c, uint16_t color, uint16_t 
     if (c < 32 || c > 126)
         c = '?';
     const uint8_t *glyph = &font5x7[(c - 32) * 5];
-    for (int col = 0; col < 5; col++) {
-        uint8_t line = glyph[col];
+    for (int col = 0; col < 5; col++)
         for (int row = 0; row < 7; row++)
-            if (line & (1 << row)) {
+            if (glyph[col] & (1 << row))
                 st7735_pixel(disp, x + col, y + row, color);
-            } else if (bg != color) {
+            else if (bg != color)
                 st7735_pixel(disp, x + col, y + row, bg);
-            }
-    }
     /* 1 pixel gap after char */
     if (bg != color)
         for (int row = 0; row < 7; row++)
@@ -612,8 +624,8 @@ int st7735_char_width(const fontinfo_t *font, char c, bool mono) {
         return 0;
     if (c < font->base)
         return 0;
-    int font_rows = (font->height + 7) / 8;
-    int char_offs = ((font->width * font_rows) + 1) * (c - font->base);
+    const int font_rows = (font->height + 7) / 8;
+    const int char_offs = ((font->width * font_rows) + 1) * (c - font->base);
     return mono ? font->width : (int)font->data[char_offs];
 }
 
@@ -622,14 +634,14 @@ int st7735_char_font(st7735_t *disp, int x, int y, char c, const fontinfo_t *fon
         return 0;
     if (c < font->base)
         return 0;
-    int font_rows = (font->height + 7) / 8;
-    int char_offs = ((font->width * font_rows) + 1) * (c - font->base);
-    int char_width = mono ? font->width : (int)font->data[char_offs];
+    const int font_rows = (font->height + 7) / 8;
+    const int char_offs = ((font->width * font_rows) + 1) * (c - font->base);
+    const int char_width = mono ? font->width : (int)font->data[char_offs];
     for (int i = 0; i < char_width; i++) {
         for (int j = 0; j < font_rows; j++) {
-            uint8_t char_byte = font->data[(char_offs + 1) + (i * font_rows) + j];
+            const uint8_t char_byte = font->data[(char_offs + 1) + (i * font_rows) + j];
             for (int k = 0; k < 8; k++) {
-                int py = y + (j * 8) + k;
+                const int py = y + (j * 8) + k;
                 if (py >= y + font->height)
                     break;
                 if (char_byte & (1 << k)) {
@@ -646,7 +658,7 @@ int st7735_char_font(st7735_t *disp, int x, int y, char c, const fontinfo_t *fon
 int st7735_text_font(st7735_t *disp, int x, int y, const char *str, const fontinfo_t *font, uint16_t fg, uint16_t bg, bool mono, int spacing) {
     if (!font || !font->data || !str)
         return 0;
-    int start_x = x;
+    const int start_x = x;
     while (*str)
         x += st7735_char_font(disp, x, y, *str++, font, fg, bg, mono) + spacing;
     return x - start_x;
