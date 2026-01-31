@@ -91,6 +91,10 @@ int st7735_text_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, con
 
 #endif
 
+/* Hardware scrolling (works best with rotation=0) */
+void st7735_scroll_setup(st7735_t *disp, int top_fixed, int scroll_area, int bottom_fixed);
+void st7735_scroll(st7735_t *disp, int line);
+
 #ifdef ST7735_IMAGE_SUPPORT
 
 /* Image format constants */

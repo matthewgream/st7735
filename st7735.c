@@ -17,27 +17,29 @@
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
 
-#define ST7735_SWRESET 0x01
-#define ST7735_SLPOUT  0x11
-#define ST7735_NORON   0x13
-#define ST7735_INVON   0x21
-#define ST7735_DISPON  0x29
-#define ST7735_CASET   0x2A
-#define ST7735_RASET   0x2B
-#define ST7735_RAMWR   0x2C
-#define ST7735_MADCTL  0x36
-#define ST7735_COLMOD  0x3A
-#define ST7735_FRMCTR1 0xB1
-#define ST7735_FRMCTR2 0xB2
-#define ST7735_FRMCTR3 0xB3
-#define ST7735_INVCTR  0xB4
-#define ST7735_PWCTR1  0xC0
-#define ST7735_PWCTR2  0xC1
-#define ST7735_PWCTR4  0xC3
-#define ST7735_PWCTR5  0xC4
-#define ST7735_VMCTR1  0xC5
-#define ST7735_GMCTRP1 0xE0
-#define ST7735_GMCTRN1 0xE1
+#define ST7735_SWRESET  0x01
+#define ST7735_SLPOUT   0x11
+#define ST7735_NORON    0x13
+#define ST7735_INVON    0x21
+#define ST7735_DISPON   0x29
+#define ST7735_CASET    0x2A
+#define ST7735_RASET    0x2B
+#define ST7735_RAMWR    0x2C
+#define ST7735_VSCRDEF  0x33
+#define ST7735_MADCTL   0x36
+#define ST7735_VSCRSADD 0x37
+#define ST7735_COLMOD   0x3A
+#define ST7735_FRMCTR1  0xB1
+#define ST7735_FRMCTR2  0xB2
+#define ST7735_FRMCTR3  0xB3
+#define ST7735_INVCTR   0xB4
+#define ST7735_PWCTR1   0xC0
+#define ST7735_PWCTR2   0xC1
+#define ST7735_PWCTR4   0xC3
+#define ST7735_PWCTR5   0xC4
+#define ST7735_VMCTR1   0xC5
+#define ST7735_GMCTRP1  0xE0
+#define ST7735_GMCTRN1  0xE1
 
 #define ST7735_COLS   132
 #define ST7735_ROWS   162
@@ -684,6 +686,21 @@ int st7735_text_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, con
 }
 
 #endif
+
+// ------------------------------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------------------------------
+
+void st7735_scroll_setup(st7735_t *disp, int top_fixed, int scroll_area, int bottom_fixed) {
+    const uint8_t data[6] = { (uint8_t)(top_fixed >> 8), (uint8_t)(top_fixed & 0xFF), (uint8_t)(scroll_area >> 8), (uint8_t)(scroll_area & 0xFF), (uint8_t)(bottom_fixed >> 8), (uint8_t)(bottom_fixed & 0xFF) };
+    cmd(disp, ST7735_VSCRDEF);
+    dat_buf(disp, data, sizeof(data));
+}
+
+void st7735_scroll(st7735_t *disp, int line) {
+    const uint8_t data[2] = { (uint8_t)(line >> 8), (uint8_t)(line & 0xFF) };
+    cmd(disp, ST7735_VSCRSADD);
+    dat_buf(disp, data, sizeof(data));
+}
 
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
