@@ -48,10 +48,11 @@ hat: hat.o $(OBJS)
 # Dependencies
 test.o: test.c st7735.h fonts.h
 mock.o: mock.c st7735.h fonts.h
-st7735.o: st7735.c st7735.h
+st7735.o: st7735.c st7735.h hardware.h
 fonts.o: fonts.c fonts.h
+hat.o: hat.c hat.h hardware.h
 
 clean:
-	rm -f test mock *.o
+	rm -f hat test mock *.o
 
 .PHONY: all clean

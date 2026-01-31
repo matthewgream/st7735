@@ -2,17 +2,15 @@
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
 
-#include "st7735.h"
-
 #include <errno.h>
 #include <fcntl.h>
-#include <linux/spi/spidev.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
 #include <unistd.h>
+
+#include "hardware.h"
+#include "st7735.h"
 
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
@@ -46,26 +44,15 @@
 #define ST7735_WIDTH  80
 #define ST7735_HEIGHT 160
 
-#define GPIO_FSEL0 0
-#define GPIO_SET0  7
-#define GPIO_CLR0  10
-
-#define GPIO_MMAP_SIZE 4096
-
-#define SPI_CHUNK_SIZE 4096
-
 struct st7735 {
-    int spi_fd;
-    volatile uint32_t *gpio;
+    uint8_t pin_dc;
+    uint8_t pin_bl;
 
-    uint8_t dc_pin;
-    uint8_t bl_pin;
-
+    int rotation;
     uint16_t width;
     uint16_t height;
     uint8_t offset_left;
     uint8_t offset_top;
-    uint8_t madctl;
 
     size_t pixels;
     uint8_t *tmpbuf;
@@ -80,41 +67,19 @@ struct st7735 {
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
 
-static inline void gpio_set_output(const st7735_t *disp, int pin) {
-    int reg = pin / 10, shift = (pin % 10) * 3;
-    disp->gpio[reg] = (disp->gpio[reg] & (uint32_t)~(7 << shift)) | (1 << shift);
-}
-static inline void gpio_set(const st7735_t *disp, int pin) {
-    disp->gpio[GPIO_SET0] = 1 << pin;
-}
-static inline void gpio_clr(const st7735_t *disp, int pin) {
-    disp->gpio[GPIO_CLR0] = 1 << pin;
-}
-
-// ------------------------------------------------------------------------------------------------------------------------
-
-static inline void spi_write(const st7735_t *disp, const uint8_t *buf, size_t len) {
-    const struct spi_ioc_transfer tr = { .tx_buf = (unsigned long)buf, .len = (unsigned int)len };
-    if (ioctl(disp->spi_fd, SPI_IOC_MESSAGE(1), &tr) < 0)
-        perror("ioctl");
-}
-
-// ------------------------------------------------------------------------------------------------------------------------
-// ------------------------------------------------------------------------------------------------------------------------
-
 static void cmd(const st7735_t *disp, uint8_t c) {
-    gpio_clr(disp, disp->dc_pin);
-    spi_write(disp, &c, 1);
+    gpio_write(disp->pin_dc, false);
+    spi_write(&c, 1);
 }
 static void dat(const st7735_t *disp, uint8_t d) {
-    gpio_set(disp, disp->dc_pin);
-    spi_write(disp, &d, 1);
+    gpio_write(disp->pin_dc, true);
+    spi_write(&d, 1);
 }
 static void dat_buf(const st7735_t *disp, const uint8_t *buf, size_t len) {
-    gpio_set(disp, disp->dc_pin);
+    gpio_write(disp->pin_dc, true);
     while (len > 0) {
         const size_t n = (len < SPI_CHUNK_SIZE) ? len : SPI_CHUNK_SIZE;
-        spi_write(disp, buf, n);
+        spi_write(buf, n);
         buf += n;
         len -= n;
     }
@@ -190,7 +155,16 @@ static void init_seq(const st7735_t *disp) {
     cmd(disp, ST7735_INVON);
 
     cmd(disp, ST7735_MADCTL);
-    dat(disp, disp->madctl);
+    uint8_t madctl;
+    if (disp->rotation == 0)
+        madctl = 0x00;
+    else if (disp->rotation == 90)
+        madctl = 0x60;
+    else if (disp->rotation == 180)
+        madctl = 0xC0;
+    else
+        madctl = 0xA0;
+    dat(disp, madctl | 0x08);
 
     cmd(disp, ST7735_COLMOD);
     dat(disp, 0x05);
@@ -227,18 +201,27 @@ static void init_seq(const st7735_t *disp) {
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
 
-st7735_t *st7735_init(int dc_pin, int bl_pin, uint32_t spi_speed, int rotation) {
+st7735_t *st7735_init(int pin_dc, int pin_bl, int rotation) {
+
+    if (spi_open() < 0)
+        return NULL;
+    if (gpio_open() < 0) {
+        spi_close();
+        return NULL;
+    }
+
     st7735_t *disp = calloc(1, sizeof(st7735_t));
     if (!disp) {
         perror("calloc");
         return NULL;
     }
 
-    disp->dc_pin = (uint8_t)dc_pin;
-    disp->bl_pin = (uint8_t)bl_pin;
+    disp->pin_dc = (uint8_t)pin_dc;
+    disp->pin_bl = (uint8_t)pin_bl;
     disp->buffer = NULL;
     disp->dirty = false;
 
+    disp->rotation = rotation;
     if (rotation == 0 || rotation == 180) {
         disp->width = ST7735_WIDTH;
         disp->height = ST7735_HEIGHT;
@@ -251,59 +234,21 @@ st7735_t *st7735_init(int dc_pin, int bl_pin, uint32_t spi_speed, int rotation) 
         disp->offset_top = (ST7735_COLS - ST7735_WIDTH) / 2;
     }
 
-    if (rotation == 0)
-        disp->madctl = 0x00 | 0x08;
-    else if (rotation == 90)
-        disp->madctl = 0x60 | 0x08;
-    else if (rotation == 180)
-        disp->madctl = 0xC0 | 0x08;
-    else
-        disp->madctl = 0xA0 | 0x08;
-
     disp->pixels = disp->width * disp->height;
     disp->tmpbuf = malloc(disp->pixels * sizeof(uint16_t));
     if (!disp->tmpbuf) {
         perror("malloc");
-        goto failed;
+        free(disp);
+        return NULL;
     }
 
-    disp->spi_fd = open("/dev/spidev0.1", O_RDWR);
-    if (disp->spi_fd < 0) {
-        perror("open: /dev/spidev0.1");
-        goto failed;
-    }
-    const uint8_t spi_mode = SPI_MODE_0, spi_bits = 8;
-    if (ioctl(disp->spi_fd, SPI_IOC_WR_MODE, &spi_mode) < 0 || ioctl(disp->spi_fd, SPI_IOC_WR_BITS_PER_WORD, &spi_bits) < 0 ||
-        ioctl(disp->spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &spi_speed) < 0) {
-        perror("ioctl: /dev/spidev0.1");
-        goto failed;
-    }
-
-    const int mem_fd = open("/dev/gpiomem", O_RDWR | O_SYNC);
-    if (mem_fd < 0) {
-        perror("open: /dev/gpiomem");
-        goto failed_spi;
-    }
-    disp->gpio = mmap(NULL, GPIO_MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, 0);
-    close(mem_fd);
-    if (disp->gpio == MAP_FAILED) {
-        perror("mmap: /dev/gpiomem");
-        goto failed_spi;
-    }
-
-    gpio_set_output(disp, dc_pin);
-    gpio_set_output(disp, bl_pin);
-    gpio_set(disp, bl_pin); /* Backlight on */
+    gpio_set_output(pin_dc);
+    gpio_set_output(pin_bl);
+    gpio_write(pin_bl, true); /* Backlight on */
 
     init_seq(disp);
 
     return disp;
-
-failed_spi:
-    close(disp->spi_fd);
-failed:
-    free(disp);
-    return NULL;
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -312,17 +257,16 @@ void st7735_close(st7735_t *disp) {
     if (!disp)
         return;
 
-    gpio_clr(disp, disp->bl_pin); /* Backlight off */
+    gpio_write(disp->pin_bl, false); /* Backlight off */
 
     if (disp->buffer)
         free(disp->buffer);
-    if (disp->gpio)
-        munmap((void *)(uintptr_t)disp->gpio, GPIO_MMAP_SIZE);
-    if (disp->spi_fd >= 0)
-        close(disp->spi_fd);
     if (disp->tmpbuf)
         free(disp->tmpbuf);
     free(disp);
+
+    gpio_close();
+    spi_close();
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -338,10 +282,7 @@ int st7735_height(const st7735_t *disp) {
 // ------------------------------------------------------------------------------------------------------------------------
 
 void st7735_backlight(st7735_t *disp, bool on) {
-    if (on)
-        gpio_set(disp, disp->bl_pin);
-    else
-        gpio_clr(disp, disp->bl_pin);
+    gpio_write(disp->pin_bl, on);
 }
 
 // ------------------------------------------------------------------------------------------------------------------------

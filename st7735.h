@@ -37,7 +37,7 @@ typedef struct st7735 st7735_t;
 // ------------------------------------------------------------------------------------------------------------------------
 
 /* Initialize display. Returns NULL on failure. */
-st7735_t *st7735_init(int dc_pin, int bl_pin, uint32_t spi_speed, int rotation);
+st7735_t *st7735_init(int dc_pin, int bl_pin, int rotation);
 
 /* Close and free resources */
 void st7735_close(st7735_t *disp);

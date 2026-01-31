@@ -7,18 +7,16 @@
  *   - 1x Relay (GPIO)
  */
 
-#include "hat.h"
-
 #include <fcntl.h>
-#include <linux/i2c-dev.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
 #include <unistd.h>
+
+#include "hardware.h"
+#include "hat.h"
 
 /* ============================================================================
  * CONFIGURATION
@@ -54,58 +52,10 @@
 #define ADC_REF_VOLTAGE    3.3f
 #define ADC_PGA_VOLTAGE    4.096f
 
-#define GPIO_FSEL0 0  /* Function select registers */
-#define GPIO_SET0  7  /* Set output high */
-#define GPIO_CLR0  10 /* Set output low */
-#define GPIO_LEV0  13 /* Read level */
-
 /* ============================================================================
- * AUTOMATION HAT STRUCTURE
+ * ADS1015
  * ============================================================================ */
 
-typedef struct {
-    volatile uint32_t *gpio;
-    int i2c_fd;
-} automationhat_t;
-
-static automationhat_t ah = { .i2c_fd = -1 };
-
-/* ============================================================================
- * LOW-LEVEL GPIO
- * ============================================================================ */
-
-static inline void gpio_set_input(int pin) {
-    const int reg = pin / 10, shift = (pin % 10) * 3;
-    ah.gpio[reg] &= (uint32_t)~(7 << shift); /* 000 = input */
-}
-static inline void gpio_set_output(int pin) {
-    const int reg = pin / 10, shift = (pin % 10) * 3;
-    ah.gpio[reg] = (ah.gpio[reg] & (uint32_t)~(7 << shift)) | (1 << shift); /* 001 = output */
-}
-static inline bool gpio_read(int pin) {
-    return (ah.gpio[GPIO_LEV0] & (1 << pin)) != 0;
-}
-static inline void gpio_write(int pin, bool value) {
-    ah.gpio[value ? GPIO_SET0 : GPIO_CLR0] = 1 << pin;
-}
-
-/* ============================================================================
- * LOW-LEVEL I2C / ADS1015
- * ============================================================================ */
-
-static inline int i2c_write_reg16(uint8_t reg, uint16_t value) {
-    const uint8_t buf[3] = { reg, (uint8_t)((value >> 8) & 0xFF), (uint8_t)(value & 0xFF) };
-    return write(ah.i2c_fd, buf, sizeof(buf)) == sizeof(buf);
-}
-static inline int i2c_read_reg16(uint8_t reg, uint16_t *value) {
-    uint8_t buf[2];
-    if (write(ah.i2c_fd, &reg, 1) != 1)
-        return 0;
-    if (read(ah.i2c_fd, buf, sizeof(buf)) != sizeof(buf))
-        return 0;
-    *value = (uint16_t)((buf[0] << 8) | buf[1]);
-    return 1;
-}
 static float ads1015_read_channel(int channel) {
     if (channel < 0 || channel > 3)
         return -1.0f;
@@ -128,29 +78,10 @@ static float ads1015_read_channel(int channel) {
 
 int automationhat_init(void) {
 
-    const int gpio_fd = open("/dev/gpiomem", O_RDWR | O_SYNC);
-    if (gpio_fd < 0) {
-        perror("failed to open /dev/gpiomem");
+    if (gpio_open() < 0)
         return -1;
-    }
-    ah.gpio = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, gpio_fd, 0);
-    close(gpio_fd);
-    if (ah.gpio == MAP_FAILED) {
-        perror("failed to mmap GPIO");
-        ah.gpio = NULL;
-        return -1;
-    }
-
-    ah.i2c_fd = open("/dev/i2c-1", O_RDWR);
-    if (ah.i2c_fd < 0) {
-        perror("failed to open /dev/i2c-1");
-        munmap((void *)(uintptr_t)ah.gpio, 4096);
-        return -1;
-    }
-    if (ioctl(ah.i2c_fd, I2C_SLAVE, ADS1015_ADDR) < 0) {
-        perror("failed to set I2C address");
-        close(ah.i2c_fd);
-        munmap((void *)(uintptr_t)ah.gpio, 4096);
+    if (i2c_open(ADS1015_ADDR) < 0) {
+        gpio_close();
         return -1;
     }
 
@@ -181,15 +112,8 @@ void automationhat_close(void) {
 
     gpio_write(RELAY_1, false);
 
-    if (ah.i2c_fd >= 0) {
-        close(ah.i2c_fd);
-        ah.i2c_fd = -1;
-    }
-
-    if (ah.gpio != NULL) {
-        munmap((void *)(uintptr_t)ah.gpio, 4096);
-        ah.gpio = NULL;
-    }
+    i2c_close();
+    gpio_close();
 }
 
 /* ============================================================================

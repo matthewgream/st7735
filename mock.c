@@ -1,12 +1,13 @@
 
-#include "fonts.h"
-#include "st7735.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "fonts.h"
+#include "st7735.h"
 
 /* ============================================================================
  * UI FRAMEWORK
@@ -67,7 +68,7 @@ static int calc_text_width(const fontinfo_t *font, const char *text) {
 int ui_setup(const ui_config_t *config) {
 
     /* Initialize display - 270° rotation = 160x80 landscape */
-    ui.disp = st7735_init(9, 25, 16000000, 270);
+    ui.disp = st7735_init(9, 25, 270);
     if (!ui.disp) {
         fprintf(stderr, "Failed to init display\n");
         return -1;

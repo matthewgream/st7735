@@ -1,12 +1,13 @@
 
-#include "fonts.h"
-#include "st7735.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "fonts.h"
+#include "st7735.h"
 
 int main(int argc, char *argv[]) {
     bool use_buffer = true;
@@ -19,7 +20,7 @@ int main(int argc, char *argv[]) {
     printf("Mode: %s\n\n", use_buffer ? "BUFFERED" : "DIRECT");
 
     /* 270 degree rotation = landscape 160x80 */
-    st7735_t *disp = st7735_init(9, 25, 16000000, 270);
+    st7735_t *disp = st7735_init(9, 25, 270);
     if (!disp) {
         fprintf(stderr, "Failed to init display\n");
         return 1;
