@@ -687,3 +687,101 @@ int st7735_text_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, con
 
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
+
+#ifdef ST7735_IMAGE_SUPPORT
+
+static const int8_t b64_table[256] = {
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 62, -1, -1, -1, 63, 52, 53, 54, 55,
+    56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1, -1, 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, -1, -1, 26, 27, 28, 29, 30, 31, 32,
+    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+};
+static uint8_t *decode_base64(const char *src, size_t *out_len) {
+    size_t src_len = strlen(src), out_size = (src_len / 4) * 3 + 3;
+    uint8_t *out = malloc(out_size);
+    if (!out)
+        return NULL;
+    size_t j = 0;
+    uint32_t accum = 0;
+    int bits = 0;
+    for (size_t i = 0; i < src_len; i++) {
+        const int v = b64_table[(uint8_t)src[i]];
+        if (v < 0)
+            continue; /* skip whitespace, padding */
+        accum = (accum << 6) | (uint32_t)v;
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            out[j++] = (accum >> bits) & 0xFF;
+        }
+    }
+    *out_len = j;
+    return out;
+}
+
+static int parse_bmp(const uint8_t *data, size_t len, int *w, int *h, const uint8_t **pixels, int *stride, int *bottom_up) {
+    if (len < 54)
+        return -1;
+    if (data[0] != 'B' || data[1] != 'M')
+        return -1;
+    const uint32_t pixel_offset = data[10] | (data[11] << 8) | (data[12] << 16) | (data[13] << 24);
+    const int32_t width = data[18] | (data[19] << 8) | (data[20] << 16) | (data[21] << 24);
+    const int32_t height = data[22] | (data[23] << 8) | (data[24] << 16) | (data[25] << 24);
+    const uint16_t bpp = data[28] | (data[29] << 8);
+    const uint32_t compression = data[30] | (data[31] << 8) | (data[32] << 16) | (data[33] << 24);
+    if (bpp != 24 || compression != 0)
+        return -1; /* only 24-bit uncompressed */
+    *w = width;
+    *bottom_up = (height > 0);
+    *h = (height > 0) ? height : -height;
+    *stride = ((width * 3) + 3) & ~3; /* rows padded to 4 bytes */
+    *pixels = data + pixel_offset;
+    if (pixel_offset + (uint32_t)((*stride) * (*h)) > len)
+        return -1;
+    return 0;
+}
+
+int st7735_image(st7735_t *disp, int x, int y, const char *data, int format, int encoding) {
+    if (format != ST7735_IMAGE_FORMAT_BMP)
+        return -1;
+    if (encoding != ST7735_IMAGE_ENCODING_RAW && encoding != ST7735_IMAGE_ENCODING_BASE64)
+        return -1;
+
+    const uint8_t *dat_buf;
+    size_t dat_len;
+    uint8_t *decoded = NULL;
+    if (encoding == ST7735_IMAGE_ENCODING_BASE64) {
+        decoded = decode_base64(data, &dat_len);
+        if (!decoded)
+            return -1;
+        dat_buf = decoded;
+    } else {
+        /* Raw bytes - need length somehow, assume it's a valid BMP with length in header */
+        dat_buf = (const uint8_t *)data;
+        dat_len = (dat_buf[2] | (dat_buf[3] << 8) | (dat_buf[4] << 16) | (dat_buf[5] << 24));
+    }
+
+    int w, h, stride, bottom_up;
+    const uint8_t *pixels;
+    if (parse_bmp(dat_buf, dat_len, &w, &h, &pixels, &stride, &bottom_up) < 0) {
+        if (decoded)
+            free(decoded);
+        return -1;
+    }
+
+    for (int py = 0; py < h; py++) {
+        const uint8_t *row = pixels + (bottom_up ? (h - 1 - py) : py) * stride;
+        for (int px = 0; px < w; px++)
+            st7735_pixel(disp, x + px, y + py, RGB565(row[px * 3 + 2], row[px * 3 + 1], row[px * 3 + 0]));
+    }
+
+    if (decoded)
+        free(decoded);
+    return 0;
+}
+
+#endif
+
+// ------------------------------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------------------------------

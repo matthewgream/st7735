@@ -1,6 +1,6 @@
 
 CC=gcc
-CDEFS=-DST7735_EXTERNAL_FONTS
+CDEFS=-DST7735_EXTERNAL_FONTS -DST7735_IMAGE_SUPPORT
 CFLAGS_COMMON=-Wall -Wextra -Wpedantic
 CFLAGS_STRICT=-Werror -Wcast-align -Wcast-qual \
 	-Wstrict-prototypes \
@@ -15,7 +15,7 @@ CFLAGS_STRICT=-Werror -Wcast-align -Wcast-qual \
 	-Wswitch-enum -Wundef \
 	-Wunreachable-code -Wunused \
 	-Wwrite-strings
-CFLAGS=$(CDEFS) $(CFLAGS_COMMON) $(CFLAGS_STRICT) -O3 -fstack-protector-strong
+CFLAGS=$(CDEFS) $(CFLAGS_COMMON) $(CFLAGS_STRICT) -O6 -fstack-protector-strong
 LDFLAGS = -lm
 
 SRCS = st7735.c fonts.c

@@ -91,6 +91,19 @@ int st7735_text_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, con
 
 #endif
 
+#ifdef ST7735_IMAGE_SUPPORT
+
+/* Image format constants */
+#define ST7735_IMAGE_FORMAT_BMP 0
+/* Image encoding constants */
+#define ST7735_IMAGE_ENCODING_RAW    0
+#define ST7735_IMAGE_ENCODING_BASE64 1
+
+/* Draw image - returns 0 on success, -1 on error */
+int st7735_image(st7735_t *disp, int x, int y, const char *data, int format, int encoding);
+
+#endif
+
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
 
