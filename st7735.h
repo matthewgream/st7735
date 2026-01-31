@@ -95,16 +95,26 @@ int st7735_text_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, con
 void st7735_scroll_setup(st7735_t *disp, int top_fixed, int scroll_area, int bottom_fixed);
 void st7735_scroll(st7735_t *disp, int line);
 
-#ifdef ST7735_IMAGE_SUPPORT
+#if defined(ST7735_IMAGE_SUPPORT_BMP) || defined(ST7735_IMAGE_FORMAT_PNG) || defined(ST7735_IMAGE_SUPPORT_JPG)
 
-/* Image format constants */
+#ifdef ST7735_IMAGE_SUPPORT_BMP
 #define ST7735_IMAGE_FORMAT_BMP 0
-/* Image encoding constants */
-#define ST7735_IMAGE_ENCODING_RAW    0
+#endif
+#ifdef ST7735_IMAGE_SUPPORT_PNG
+#define ST7735_IMAGE_FORMAT_PNG 1
+#endif
+#ifdef ST7735_IMAGE_SUPPORT_JPG
+#define ST7735_IMAGE_FORMAT_JPG 2
+#endif
+
+#define ST7735_IMAGE_ENCODING_RAW 0
+#ifdef ST7735_IMAGE_SUPPORT_BASE64
 #define ST7735_IMAGE_ENCODING_BASE64 1
+#endif
 
 /* Draw image - returns 0 on success, -1 on error */
-int st7735_image(st7735_t *disp, int x, int y, const char *data, int format, int encoding);
+int st7735_image(st7735_t *disp, int x, int y, const char *data, int size, int format, int encoding);
+int st7735_image_file(st7735_t *disp, int x, int y, const char *filename);
 
 #endif
 

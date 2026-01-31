@@ -1,6 +1,6 @@
 
 CC=gcc
-CDEFS=-DST7735_EXTERNAL_FONTS -DST7735_IMAGE_SUPPORT
+CDEFS=-DST7735_EXTERNAL_FONTS -DST7735_IMAGE_SUPPORT_BMP -DST7735_IMAGE_SUPPORT_PNG -DST7735_IMAGE_SUPPORT_JPG -DST7735_IMAGE_SUPPORT_BASE64
 CFLAGS_COMMON=-Wall -Wextra -Wpedantic
 CFLAGS_STRICT=-Werror -Wcast-align -Wcast-qual \
 	-Wstrict-prototypes \
@@ -17,8 +17,18 @@ CFLAGS_STRICT=-Werror -Wcast-align -Wcast-qual \
 	-Wwrite-strings
 CFLAGS=$(CDEFS) $(CFLAGS_COMMON) $(CFLAGS_STRICT) -O6 -fstack-protector-strong
 LDFLAGS = -lm
+ifneq (,$(findstring ST7735_IMAGE_SUPPORT_PNG,$(CFLAGS)))
+    LDFLAGS += -lpng
+endif
+ifneq (,$(findstring ST7735_IMAGE_SUPPORT_JPG,$(CFLAGS)))
+    LDFLAGS += -ljpeg
+endif
 
-SRCS = st7735.c fonts.c
+SRCS = st7735.c
+ifneq (,$(findstring ST7735_EXTERNAL_FONTS,$(CFLAGS)))
+    SRCS += fonts.c
+endif
+
 OBJS = $(SRCS:.c=.o)
 
 all: test mock hat

@@ -273,7 +273,8 @@ st7735_t *st7735_init(int dc_pin, int bl_pin, uint32_t spi_speed, int rotation) 
         goto failed;
     }
     const uint8_t spi_mode = SPI_MODE_0, spi_bits = 8;
-    if (ioctl(disp->spi_fd, SPI_IOC_WR_MODE, &spi_mode) < 0 || ioctl(disp->spi_fd, SPI_IOC_WR_BITS_PER_WORD, &spi_bits) < 0 || ioctl(disp->spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &spi_speed) < 0) {
+    if (ioctl(disp->spi_fd, SPI_IOC_WR_MODE, &spi_mode) < 0 || ioctl(disp->spi_fd, SPI_IOC_WR_BITS_PER_WORD, &spi_bits) < 0 ||
+        ioctl(disp->spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &spi_speed) < 0) {
         perror("ioctl: /dev/spidev0.1");
         goto failed;
     }
@@ -691,7 +692,8 @@ int st7735_text_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, con
 // ------------------------------------------------------------------------------------------------------------------------
 
 void st7735_scroll_setup(st7735_t *disp, int top_fixed, int scroll_area, int bottom_fixed) {
-    const uint8_t data[6] = { (uint8_t)(top_fixed >> 8), (uint8_t)(top_fixed & 0xFF), (uint8_t)(scroll_area >> 8), (uint8_t)(scroll_area & 0xFF), (uint8_t)(bottom_fixed >> 8), (uint8_t)(bottom_fixed & 0xFF) };
+    const uint8_t data[6] = { (uint8_t)(top_fixed >> 8),     (uint8_t)(top_fixed & 0xFF),  (uint8_t)(scroll_area >> 8),
+                              (uint8_t)(scroll_area & 0xFF), (uint8_t)(bottom_fixed >> 8), (uint8_t)(bottom_fixed & 0xFF) };
     cmd(disp, ST7735_VSCRDEF);
     dat_buf(disp, data, sizeof(data));
 }
@@ -705,14 +707,17 @@ void st7735_scroll(st7735_t *disp, int line) {
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
 
-#ifdef ST7735_IMAGE_SUPPORT
+#if defined(ST7735_IMAGE_SUPPORT_BMP) || defined(ST7735_IMAGE_FORMAT_PNG) || defined(ST7735_IMAGE_SUPPORT_JPG)
 
+#ifdef ST7735_IMAGE_SUPPORT_BASE64
 static const int8_t b64_table[256] = {
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 62, -1, -1, -1, 63, 52, 53, 54, 55,
-    56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1, -1, 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, -1, -1, 26, 27, 28, 29, 30, 31, 32,
-    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, 62, -1, -1, -1, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1, -1, 0,  1,  2,  3,  4,  5,  6,  7,  8,
+    9,  10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, -1, -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+    40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 };
 static uint8_t *decode_base64(const char *src, size_t *out_len) {
     size_t src_len = strlen(src), out_size = (src_len / 4) * 3 + 3;
@@ -736,8 +741,10 @@ static uint8_t *decode_base64(const char *src, size_t *out_len) {
     *out_len = j;
     return out;
 }
+#endif
 
-static int parse_bmp(const uint8_t *data, size_t len, int *w, int *h, const uint8_t **pixels, int *stride, int *bottom_up) {
+#ifdef ST7735_IMAGE_SUPPORT_BMP
+static int __bmp_parse(const uint8_t *data, size_t len, int *w, int *h, const uint8_t **pixels, int *stride, int *bottom_up) {
     if (len < 54)
         return -1;
     if (data[0] != 'B' || data[1] != 'M')
@@ -758,44 +765,210 @@ static int parse_bmp(const uint8_t *data, size_t len, int *w, int *h, const uint
         return -1;
     return 0;
 }
-
-int st7735_image(st7735_t *disp, int x, int y, const char *data, int format, int encoding) {
-    if (format != ST7735_IMAGE_FORMAT_BMP)
-        return -1;
-    if (encoding != ST7735_IMAGE_ENCODING_RAW && encoding != ST7735_IMAGE_ENCODING_BASE64)
-        return -1;
-
-    const uint8_t *dat_buf;
-    size_t dat_len;
-    uint8_t *decoded = NULL;
-    if (encoding == ST7735_IMAGE_ENCODING_BASE64) {
-        decoded = decode_base64(data, &dat_len);
-        if (!decoded)
-            return -1;
-        dat_buf = decoded;
-    } else {
-        /* Raw bytes - need length somehow, assume it's a valid BMP with length in header */
-        dat_buf = (const uint8_t *)data;
-        dat_len = (dat_buf[2] | (dat_buf[3] << 8) | (dat_buf[4] << 16) | (dat_buf[5] << 24));
-    }
-
+static int load_bmp_data(st7735_t *disp, int x, int y, const uint8_t *data, size_t len) {
     int w, h, stride, bottom_up;
     const uint8_t *pixels;
-    if (parse_bmp(dat_buf, dat_len, &w, &h, &pixels, &stride, &bottom_up) < 0) {
-        if (decoded)
-            free(decoded);
+    if (__bmp_parse(data, len, &w, &h, &pixels, &stride, &bottom_up) != 0)
         return -1;
-    }
-
     for (int py = 0; py < h; py++) {
         const uint8_t *row = pixels + (bottom_up ? (h - 1 - py) : py) * stride;
         for (int px = 0; px < w; px++)
             st7735_pixel(disp, x + px, y + py, RGB565(row[px * 3 + 2], row[px * 3 + 1], row[px * 3 + 0]));
     }
+    return 0;
+}
+static int load_bmp_file(st7735_t *disp, int x, int y, const char *filename) {
+    FILE *fp = fopen(filename, "rb");
+    if (!fp)
+        return -1;
+    fseek(fp, 0, SEEK_END);
+    size_t len = (size_t)ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    uint8_t *data = malloc(len);
+    if (!data) {
+        fclose(fp);
+        return -1;
+    }
+    fread(data, 1, len, fp);
+    fclose(fp);
+    const int result = load_bmp_data(disp, x, y, data, len);
+    free(data);
+    return result;
+}
+#endif
 
+#ifdef ST7735_IMAGE_SUPPORT_PNG
+#include <png.h>
+static void __png_image_setup(png_image *image) {
+    memset(image, 0, sizeof(png_image));
+    image->version = PNG_IMAGE_VERSION;
+}
+static int __png_image_render(st7735_t *disp, int x, int y, png_image *image) {
+    image->format = PNG_FORMAT_RGB;
+    uint8_t *buffer = malloc(PNG_IMAGE_SIZE(*image));
+    if (!buffer) {
+        png_image_free(image);
+        return -1;
+    }
+    if (!png_image_finish_read(image, NULL, buffer, 0, NULL)) {
+        free(buffer);
+        png_image_free(image);
+        return -1;
+    }
+    for (int py = 0; py < (int)image->height; py++)
+        for (int px = 0; px < (int)image->width; px++) {
+            const int idx = (py * (int)image->width + px) * 3;
+            st7735_pixel(disp, x + px, y + py, RGB565(buffer[idx], buffer[idx + 1], buffer[idx + 2]));
+        }
+    free(buffer);
+    png_image_free(image);
+    return 0;
+}
+static int load_png_data(st7735_t *disp, int x, int y, const uint8_t *data, size_t len) {
+    png_image image;
+    __png_image_setup(&image);
+    if (!png_image_begin_read_from_memory(&image, data, len))
+        return -1;
+    return __png_image_render(disp, x, y, &image);
+}
+static int load_png_file(st7735_t *disp, int x, int y, const char *filename) {
+    png_image image;
+    __png_image_setup(&image);
+    if (!png_image_begin_read_from_file(&image, filename))
+        return -1;
+    return __png_image_render(disp, x, y, &image);
+}
+#endif
+
+#ifdef ST7735_IMAGE_SUPPORT_JPG
+#include <jpeglib.h>
+#include <setjmp.h>
+struct jpg_error_mgr {
+    struct jpeg_error_mgr pub;
+    jmp_buf setjmp_buffer;
+};
+static void jpg_error_exit(j_common_ptr cinfo) {
+    longjmp(((struct jpg_error_mgr *)cinfo->err)->setjmp_buffer, 1);
+}
+#define __jpg_image_setup(cinfo, jerr)                                                                                                                         \
+    (cinfo)->err = jpeg_std_error(&((jerr)->pub));                                                                                                             \
+    (jerr)->pub.error_exit = jpg_error_exit;                                                                                                                   \
+    if (setjmp((jerr)->setjmp_buffer)) {                                                                                                                       \
+        jpeg_destroy_decompress(cinfo);                                                                                                                        \
+        return -1;                                                                                                                                             \
+    }
+static int __jpg_image_render(st7735_t *disp, int x, int y, struct jpeg_decompress_struct *cinfo) {
+    jpeg_read_header(cinfo, TRUE);
+    cinfo->out_color_space = JCS_RGB;
+    jpeg_start_decompress(cinfo);
+    uint8_t *row = malloc(cinfo->output_width * 3);
+    if (!row) {
+        jpeg_destroy_decompress(cinfo);
+        return -1;
+    }
+    int py = 0;
+    while (cinfo->output_scanline < cinfo->output_height) {
+        jpeg_read_scanlines(cinfo, &row, 1);
+        for (int px = 0; px < (int)cinfo->output_width; px++)
+            st7735_pixel(disp, x + px, y + py, RGB565(row[px * 3], row[px * 3 + 1], row[px * 3 + 2]));
+        py++;
+    }
+    free(row);
+    jpeg_finish_decompress(cinfo);
+    jpeg_destroy_decompress(cinfo);
+    return 0;
+}
+static int load_jpg_data(st7735_t *disp, int x, int y, const uint8_t *data, size_t len) {
+    struct jpeg_decompress_struct cinfo;
+    struct jpg_error_mgr jerr;
+    __jpg_image_setup(&cinfo, &jerr);
+    jpeg_create_decompress(&cinfo);
+    jpeg_mem_src(&cinfo, data, len);
+    return __jpg_image_render(disp, x, y, &cinfo);
+}
+static int load_jpg_file(st7735_t *disp, int x, int y, const char *filename) {
+    struct jpeg_decompress_struct cinfo;
+    struct jpg_error_mgr jerr;
+    __jpg_image_setup(&cinfo, &jerr);
+    FILE *fp = fopen(filename, "rb");
+    if (!fp)
+        return -1;
+    jpeg_create_decompress(&cinfo);
+    jpeg_stdio_src(&cinfo, fp);
+    const int ret = __jpg_image_render(disp, x, y, &cinfo);
+    fclose(fp);
+    return ret;
+}
+#endif
+
+int st7735_image(st7735_t *disp, int x, int y, const char *data, int size, int format, int encoding) {
+    const uint8_t *img_buf;
+    size_t img_len;
+#if defined(ST7735_IMAGE_SUPPORT_BASE64)
+    uint8_t *decoded = NULL;
+#endif
+
+    switch (encoding) {
+#ifdef ST7735_IMAGE_SUPPORT_BASE64
+    case ST7735_IMAGE_ENCODING_BASE64:
+        decoded = decode_base64(data, &img_len);
+        if (!decoded)
+            return -1;
+        img_buf = decoded;
+        break;
+#endif
+    case ST7735_IMAGE_ENCODING_RAW:
+        img_buf = (const uint8_t *)data;
+        img_len = (size_t)size;
+        break;
+    default:
+        return -1;
+    }
+
+    int result = -1;
+    switch (format) {
+#ifdef ST7735_IMAGE_SUPPORT_BMP
+    case ST7735_IMAGE_FORMAT_BMP:
+        result = load_bmp_data(disp, x, y, img_buf, img_len);
+        break;
+#endif
+#ifdef ST7735_IMAGE_SUPPORT_PNG
+    case ST7735_IMAGE_FORMAT_PNG:
+        result = load_png_data(disp, x, y, img_buf, img_len);
+        break;
+#endif
+#ifdef ST7735_IMAGE_SUPPORT_JPG
+    case ST7735_IMAGE_FORMAT_JPG:
+        result = load_jpg_data(disp, x, y, img_buf, img_len);
+        break;
+#endif
+    default:
+        result = -1;
+    }
+#if defined(ST7735_IMAGE_SUPPORT_BASE64)
     if (decoded)
         free(decoded);
-    return 0;
+#endif
+    return result;
+}
+
+int st7735_image_file(st7735_t *disp, int x, int y, const char *filename) {
+    const char *ext = strrchr(filename, '.');
+    if (!ext)
+        return -1;
+#ifdef ST7735_IMAGE_SUPPORT_BMP
+    if (strcasecmp(ext, ".bmp") == 0)
+        return load_bmp_file(disp, x, y, filename);
+#endif
+#ifdef ST7735_IMAGE_SUPPORT_PNG
+    else if (strcasecmp(ext, ".png") == 0)
+        return load_png_file(disp, x, y, filename);
+#endif
+#ifdef ST7735_IMAGE_SUPPORT_JPG
+    else if (strcasecmp(ext, ".jpg") == 0 || strcasecmp(ext, ".jpeg") == 0)
+        return load_jpg_file(disp, x, y, filename);
+#endif
+    return -1;
 }
 
 #endif
