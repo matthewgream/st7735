@@ -18,35 +18,35 @@
 // ------------------------------------------------------------------------------------------------------------------------
 
 #define ST7735_SWRESET 0x01
-#define ST7735_SLPOUT 0x11
-#define ST7735_NORON 0x13
-#define ST7735_INVON 0x21
-#define ST7735_DISPON 0x29
-#define ST7735_CASET 0x2A
-#define ST7735_RASET 0x2B
-#define ST7735_RAMWR 0x2C
-#define ST7735_MADCTL 0x36
-#define ST7735_COLMOD 0x3A
+#define ST7735_SLPOUT  0x11
+#define ST7735_NORON   0x13
+#define ST7735_INVON   0x21
+#define ST7735_DISPON  0x29
+#define ST7735_CASET   0x2A
+#define ST7735_RASET   0x2B
+#define ST7735_RAMWR   0x2C
+#define ST7735_MADCTL  0x36
+#define ST7735_COLMOD  0x3A
 #define ST7735_FRMCTR1 0xB1
 #define ST7735_FRMCTR2 0xB2
 #define ST7735_FRMCTR3 0xB3
-#define ST7735_INVCTR 0xB4
-#define ST7735_PWCTR1 0xC0
-#define ST7735_PWCTR2 0xC1
-#define ST7735_PWCTR4 0xC3
-#define ST7735_PWCTR5 0xC4
-#define ST7735_VMCTR1 0xC5
+#define ST7735_INVCTR  0xB4
+#define ST7735_PWCTR1  0xC0
+#define ST7735_PWCTR2  0xC1
+#define ST7735_PWCTR4  0xC3
+#define ST7735_PWCTR5  0xC4
+#define ST7735_VMCTR1  0xC5
 #define ST7735_GMCTRP1 0xE0
 #define ST7735_GMCTRN1 0xE1
 
-#define ST7735_COLS 132
-#define ST7735_ROWS 162
-#define ST7735_WIDTH 80
+#define ST7735_COLS   132
+#define ST7735_ROWS   162
+#define ST7735_WIDTH  80
 #define ST7735_HEIGHT 160
 
 #define GPIO_FSEL0 0
-#define GPIO_SET0 7
-#define GPIO_CLR0 10
+#define GPIO_SET0  7
+#define GPIO_CLR0  10
 
 #define GPIO_MMAP_SIZE 4096
 
@@ -78,13 +78,17 @@ static inline void gpio_set_output(const st7735_t *disp, int pin) {
     int reg = pin / 10, shift = (pin % 10) * 3;
     disp->gpio[reg] = (disp->gpio[reg] & (uint32_t)~(7 << shift)) | (1 << shift);
 }
-static inline void gpio_set(const st7735_t *disp, int pin) { disp->gpio[GPIO_SET0] = 1 << pin; }
-static inline void gpio_clr(const st7735_t *disp, int pin) { disp->gpio[GPIO_CLR0] = 1 << pin; }
+static inline void gpio_set(const st7735_t *disp, int pin) {
+    disp->gpio[GPIO_SET0] = 1 << pin;
+}
+static inline void gpio_clr(const st7735_t *disp, int pin) {
+    disp->gpio[GPIO_CLR0] = 1 << pin;
+}
 
 // ------------------------------------------------------------------------------------------------------------------------
 
 static inline void spi_write(const st7735_t *disp, const uint8_t *buf, size_t len) {
-    const struct spi_ioc_transfer tr = {.tx_buf = (unsigned long)buf, .len = (unsigned int)len};
+    const struct spi_ioc_transfer tr = { .tx_buf = (unsigned long)buf, .len = (unsigned int)len };
     if (ioctl(disp->spi_fd, SPI_IOC_MESSAGE(1), &tr) < 0)
         perror("ioctl");
 }
@@ -198,12 +202,12 @@ static void init_seq(const st7735_t *disp) {
     dat(disp, (uint8_t)(disp->height + disp->offset_top - 1));
 
     cmd(disp, ST7735_GMCTRP1);
-    const uint8_t gp[] = {0x02, 0x1c, 0x07, 0x12, 0x37, 0x32, 0x29, 0x2d, 0x29, 0x25, 0x2B, 0x39, 0x00, 0x01, 0x03, 0x10};
+    const uint8_t gp[] = { 0x02, 0x1c, 0x07, 0x12, 0x37, 0x32, 0x29, 0x2d, 0x29, 0x25, 0x2B, 0x39, 0x00, 0x01, 0x03, 0x10 };
     for (int i = 0; i < 16; i++)
         dat(disp, gp[i]);
 
     cmd(disp, ST7735_GMCTRN1);
-    const uint8_t gn[] = {0x03, 0x1d, 0x07, 0x06, 0x2E, 0x2C, 0x29, 0x2D, 0x2E, 0x2E, 0x37, 0x3F, 0x00, 0x00, 0x02, 0x10};
+    const uint8_t gn[] = { 0x03, 0x1d, 0x07, 0x06, 0x2E, 0x2C, 0x29, 0x2D, 0x2E, 0x2E, 0x37, 0x3F, 0x00, 0x00, 0x02, 0x10 };
     for (int i = 0; i < 16; i++)
         dat(disp, gn[i]);
 
@@ -305,10 +309,7 @@ void st7735_close(st7735_t *disp) {
     if (disp->buffer)
         free(disp->buffer);
     if (disp->gpio)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wcast-qual"
-        munmap((void *)disp->gpio, GPIO_MMAP_SIZE);
-#pragma GCC diagnostic pop
+        munmap((void *)(uintptr_t)disp->gpio, GPIO_MMAP_SIZE);
     if (disp->spi_fd >= 0)
         close(disp->spi_fd);
     if (disp->tmpbuf)
@@ -319,8 +320,12 @@ void st7735_close(st7735_t *disp) {
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
 
-int st7735_width(const st7735_t *disp) { return disp->width; }
-int st7735_height(const st7735_t *disp) { return disp->height; }
+int st7735_width(const st7735_t *disp) {
+    return disp->width;
+}
+int st7735_height(const st7735_t *disp) {
+    return disp->height;
+}
 
 // ------------------------------------------------------------------------------------------------------------------------
 
@@ -347,7 +352,9 @@ void st7735_set_buffered(st7735_t *disp, bool enabled) {
     }
 }
 
-bool st7735_is_buffered(const st7735_t *disp) { return disp->buffer != NULL; }
+bool st7735_is_buffered(const st7735_t *disp) {
+    return disp->buffer != NULL;
+}
 
 // ------------------------------------------------------------------------------------------------------------------------
 
@@ -374,7 +381,7 @@ void st7735_pixel(st7735_t *disp, int x, int y, uint16_t color) {
     if (disp->buffer) {
         disp->buffer[y * disp->width + x] = color;
     } else {
-        const uint8_t buf[2] = {(uint8_t)(color >> 8), (uint8_t)(color & 0xFF)};
+        const uint8_t buf[2] = { (uint8_t)(color >> 8), (uint8_t)(color & 0xFF) };
         set_window(disp, x, y, x, y);
         dat_buf(disp, buf, 2);
     }

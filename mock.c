@@ -15,11 +15,11 @@
 #define UI_STATUS_BG COLOR_BLACK
 #define UI_STATUS_FG RGB565(196 - 32, 196 - 32, 196 - 32) /* Gray */
 
-#define UI_ABBREV_IDLE RGB565(128, 128, 128)   /* Gray */
-#define UI_ABBREV_FLOW RGB565(0, 200, 0)       /* Green */
-#define UI_ABBREV_MEASURE RGB565(50, 100, 255) /* Blue */
-#define UI_ABBREV_ERROR RGB565(255, 0, 0)      /* Red */
-#define UI_ABBREV_FG COLOR_BLACK
+#define UI_ABBREV_IDLE    RGB565(128, 128, 128) /* Gray */
+#define UI_ABBREV_FLOW    RGB565(0, 200, 0)     /* Green */
+#define UI_ABBREV_MEASURE RGB565(50, 100, 255)  /* Blue */
+#define UI_ABBREV_ERROR   RGB565(255, 0, 0)     /* Red */
+#define UI_ABBREV_FG      COLOR_BLACK
 
 #define UI_MAIN_BG COLOR_BLACK
 
@@ -118,8 +118,6 @@ int ui_setup(const ui_config_t *config) {
     /* Clear display */
     st7735_fill(ui.disp, UI_MAIN_BG);
 
-    /* Draw initial status bar background */
-    // st7735_fill_rect(ui.disp, 0, ui.status_y, disp_w, ui.status_h, UI_STATUS_BG);
     ui.status_x = ui.abbrev_x;
     ui.status_y -= 5;
 
@@ -141,7 +139,9 @@ void ui_cleanup(void) {
     }
 }
 
-void ui_flush(void) { st7735_flush(ui.disp); }
+void ui_flush(void) {
+    st7735_flush(ui.disp);
+}
 
 void ui_set_status(const char *fmt, ...) {
     char text[64];
@@ -149,9 +149,7 @@ void ui_set_status(const char *fmt, ...) {
     va_start(args, fmt);
     vsnprintf(text, sizeof(text), fmt, args);
     va_end(args);
-    /* Clear status bar */
     st7735_fill_rect(ui.disp, 0, ui.status_y, st7735_width(ui.disp), ui.status_h, UI_STATUS_BG);
-    /* Draw text centered vertically, left aligned with small margin */
     const int text_y = ui.status_y + 2;
     st7735_text_font(ui.disp, ui.status_x, text_y, UI_STATUS_FG, UI_STATUS_BG, ui.font_status, false, 1, text);
 }
@@ -161,9 +159,7 @@ void ui_set_abbrev(uint16_t color_bg, const char *fmt, ...) {
     va_start(args, fmt);
     vsnprintf(text, sizeof(text), fmt, args);
     va_end(args);
-    /* Draw filled rectangle */
     st7735_fill_rect(ui.disp, ui.abbrev_x, ui.abbrev_y, ui.abbrev_w, ui.abbrev_h, color_bg);
-    /* Calculate actual text width using variable width font, and centre it */
     const int line_x = ui.abbrev_x + (ui.abbrev_w - calc_text_width(ui.font_abbrev, text)) / 2;
     const int text_y = ui.abbrev_y + (ui.abbrev_h - ui.font_abbrev->height) / 2;
     st7735_text_font(ui.disp, line_x, text_y, UI_ABBREV_FG, color_bg, ui.font_abbrev, false, 0, text);
@@ -174,9 +170,7 @@ void ui_set_line(int num, uint16_t color, const char *fmt, ...) {
     va_start(args, fmt);
     vsnprintf(text, sizeof(text), fmt, args);
     va_end(args);
-    /* Clear line area */
     st7735_fill_rect(ui.disp, ui.line_x, num == 1 ? ui.line1_y : ui.line2_y, ui.line_x_max, ui.font_text->height, UI_MAIN_BG);
-    /* Draw text */
     st7735_text_font(ui.disp, ui.line_x, num == 1 ? ui.line1_y : ui.line2_y, color, UI_MAIN_BG, ui.font_text, false, 1, text);
 }
 
@@ -226,9 +220,13 @@ typedef struct {
 } measurement_t;
 
 static measurement_t measurements[] = {
-    {"t", "Temperature", 3, {23.5f}, 0.1f, render_temp},       {"ph", "pH Level", 5, {7.2f}, 0.05f, render_ph},      {"orp", "ORP", 5, {245.0f}, 3.2f, render_orp},
-    {"do", "Dissolved O2", 5, {8.1f}, 0.15f, render_do},       {"ec", "Conductivity", 5, {520.0f}, 8.0f, render_ec}, {"tur", "Turbidity", 5, {3.2f}, 0.4f, render_turbidity},
-    {"rgb", "Color", 5, {0x8A, 0xC4, 0x7E}, 5.0f, render_rgb},
+    { "t",   "Temperature",  3, { 23.5f },            0.1f,  render_temp      },
+    { "ph",  "pH Level",     5, { 7.2f },             0.05f, render_ph        },
+    { "orp", "ORP",          5, { 245.0f },           3.2f,  render_orp       },
+    { "do",  "Dissolved O2", 5, { 8.1f },             0.15f, render_do        },
+    { "ec",  "Conductivity", 5, { 520.0f },           8.0f,  render_ec        },
+    { "tur", "Turbidity",    5, { 3.2f },             0.4f,  render_turbidity },
+    { "rgb", "Color",        5, { 0x8A, 0xC4, 0x7E }, 5.0f,  render_rgb       },
 };
 #define NUM_MEASUREMENTS (sizeof(measurements) / sizeof(measurements[0]))
 
@@ -327,7 +325,7 @@ void mock_run(void) {
  * MAIN
  * ============================================================================ */
 
-static const char *ui_abbreviations[] = {"Zz", ">>>", "<<<", "<!>", "ph", "orp", "do", "ec", "t", "tur", "rgb", NULL};
+static const char *ui_abbreviations[] = { "Zz", ">>>", "<<<", "<!>", "ph", "orp", "do", "ec", "t", "tur", "rgb", NULL };
 
 int main(void) {
     srand((unsigned int)time(NULL));
