@@ -231,13 +231,13 @@ static measurement_t measurements[] = {
 #define NUM_MEASUREMENTS (sizeof(measurements) / sizeof(measurements[0]))
 
 void mock_measure(measurement_t *m, int m_current, int m_number) {
-    int sample_time = 2; /* seconds per sample */
+    int sample_time = 1; /* seconds per sample */
     printf("  measuring: %s\n", m->name);
     ui_set_abbrev(UI_ABBREV_MEASURE, m->abbrev);
     for (int s = 1; s <= m->num_samples; s++) {
         ui_set_line(1, COLOR_WHITE, "sampling %d/%d", s, m->num_samples);
         for (int t = sample_time; t > 0; t--) {
-            ui_set_status("measuring (%d/%d) ... %ds", m_current, m_number, (m->num_samples - s) * sample_time + t);
+            ui_set_status("measuring %d/%d ... %ds", m_current, m_number, (m->num_samples - s) * sample_time + t);
             float simulated[3];
             for (int i = 0; i < 3; i++)
                 simulated[i] = m->values[i] + (((float)(rand() % 100) / 100.0f - 0.5f) * m->stddev * 2);
@@ -288,13 +288,13 @@ void mock_run(void) {
 
     mock_idle("3d14h20m");
 
-    mock_water("FILLING", ">>>", "filling from inlet", 0, 50);
+    mock_water("FILLING", ">>>", "filling from inlet ...", 0, 50);
 
     printf("[MEASURING]\n");
     for (int i = 0; i < (int)NUM_MEASUREMENTS; i++)
         mock_measure(&measurements[i], i + 1, NUM_MEASUREMENTS);
 
-    mock_water("DRAINING", "<<<", "draining to outlet", 50, 0);
+    mock_water("DRAINING", "<<<", "draining to outlet ...", 50, 0);
 
     printf("[COMPLETE]\n");
     ui_set_abbrev(UI_ABBREV_IDLE, "-");

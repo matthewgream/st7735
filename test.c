@@ -9,11 +9,11 @@
 #include <unistd.h>
 
 int main(int argc, char *argv[]) {
-    bool use_buffer = false;
+    bool use_buffer = true;
 
     for (int i = 1; i < argc; i++)
-        if (strcmp(argv[i], "--buffered") == 0 || strcmp(argv[i], "-b") == 0)
-            use_buffer = true;
+        if (strcmp(argv[i], "--unbuffered") == 0 || strcmp(argv[i], "-u") == 0)
+            use_buffer = false;
 
     printf("=== ST7735 Library Test ===\n");
     printf("Mode: %s\n\n", use_buffer ? "BUFFERED" : "DIRECT");

@@ -69,6 +69,10 @@ struct st7735 {
     uint8_t *tmpbuf;
 
     uint16_t *buffer;
+
+    int dirty_x1, dirty_y1;
+    int dirty_x2, dirty_y2;
+    bool dirty;
 };
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -231,6 +235,7 @@ st7735_t *st7735_init(int dc_pin, int bl_pin, uint32_t spi_speed, int rotation) 
     disp->dc_pin = (uint8_t)dc_pin;
     disp->bl_pin = (uint8_t)bl_pin;
     disp->buffer = NULL;
+    disp->dirty = false;
 
     if (rotation == 0 || rotation == 180) {
         disp->width = ST7735_WIDTH;
@@ -359,18 +364,29 @@ bool st7735_is_buffered(const st7735_t *disp) {
 // ------------------------------------------------------------------------------------------------------------------------
 
 void st7735_flush(st7735_t *disp) {
-    if (!disp->buffer)
+    if (!disp->buffer || !disp->dirty)
         return;
-    set_window(disp, 0, 0, disp->width - 1, disp->height - 1);
+    const int x1 = disp->dirty_x1, y1 = disp->dirty_y1;
+    const int x2 = disp->dirty_x2, y2 = disp->dirty_y2;
+    const int w = x2 - x1 + 1, h = y2 - y1 + 1;
+    set_window(disp, x1, y1, x2, y2);
+    uint8_t *tmp = disp->tmpbuf;
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    dat_buf(disp, (const uint8_t *)disp->buffer, disp->pixels * 2);
-#else
-    for (size_t i = 0; i < disp->pixels; i++) {
-        disp->tmpbuf[i * 2] = (uint8_t)(disp->buffer[i] >> 8);
-        disp->tmpbuf[i * 2 + 1] = (uint8_t)(disp->buffer[i] & 0xFF);
+    for (int y = y1; y <= y2; y++) {
+        memcpy(tmp, &disp->buffer[y * disp->width + x1], w * 2);
+        tmp += w * 2;
     }
-    dat_buf(disp, disp->tmpbuf, disp->pixels * 2);
+    dat_buf(disp, disp->tmpbuf, (size_t)(w * h) * 2);
+#else
+    for (int y = y1; y <= y2; y++)
+        for (int x = x1; x <= x2; x++) {
+            const uint16_t px = disp->buffer[y * disp->width + x];
+            *tmp++ = (uint8_t)(px >> 8);
+            *tmp++ = (uint8_t)(px & 0xFF);
+        }
+    dat_buf(disp, disp->tmpbuf, (size_t)(w * h) * 2);
 #endif
+    disp->dirty = false;
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -380,6 +396,20 @@ void st7735_pixel(st7735_t *disp, int x, int y, uint16_t color) {
         return;
     if (disp->buffer) {
         disp->buffer[y * disp->width + x] = color;
+        if (!disp->dirty) {
+            disp->dirty_x1 = disp->dirty_x2 = x;
+            disp->dirty_y1 = disp->dirty_y2 = y;
+            disp->dirty = true;
+        } else {
+            if (x < disp->dirty_x1)
+                disp->dirty_x1 = x;
+            if (x > disp->dirty_x2)
+                disp->dirty_x2 = x;
+            if (y < disp->dirty_y1)
+                disp->dirty_y1 = y;
+            if (y > disp->dirty_y2)
+                disp->dirty_y2 = y;
+        }
     } else {
         const uint8_t buf[2] = { (uint8_t)(color >> 8), (uint8_t)(color & 0xFF) };
         set_window(disp, x, y, x, y);
@@ -391,13 +421,13 @@ void st7735_pixel(st7735_t *disp, int x, int y, uint16_t color) {
 
 void st7735_fill(st7735_t *disp, uint16_t color) {
     if (disp->buffer) {
-        for (size_t i = 0; i < disp->pixels; i++)
-            disp->buffer[i] = color;
+        for (int y = 0; y < disp->height; y++)
+            for (int x = 0; x < disp->width; x++)
+                st7735_pixel(disp, x, y, color);
     } else {
-        const uint8_t hi = (uint8_t)(color >> 8), lo = (uint8_t)(color & 0xFF);
         for (size_t i = 0; i < disp->pixels; i++) {
-            disp->tmpbuf[i * 2] = hi;
-            disp->tmpbuf[i * 2 + 1] = lo;
+            disp->tmpbuf[i * 2] = (uint8_t)(color >> 8);
+            disp->tmpbuf[i * 2 + 1] = (uint8_t)(color & 0xFF);
         }
         set_window(disp, 0, 0, disp->width - 1, disp->height - 1);
         dat_buf(disp, disp->tmpbuf, disp->pixels * 2);
@@ -439,17 +469,14 @@ void st7735_fill_rect(st7735_t *disp, int x, int y, int w, int h, uint16_t color
     if (disp->buffer) {
         for (int py = y; py < y + h; py++)
             for (int px = x; px < x + w; px++)
-                if (px >= 0 && px < disp->width && py >= 0 && py < disp->height)
-                    disp->buffer[py * disp->width + px] = color;
+                st7735_pixel(disp, px, py, color);
     } else {
-        const uint8_t hi = (uint8_t)(color >> 8), lo = (uint8_t)(color & 0xFF);
-        const size_t pixels = (size_t)(w * h);
-        for (size_t i = 0; i < pixels; i++) {
-            disp->tmpbuf[i * 2] = hi;
-            disp->tmpbuf[i * 2 + 1] = lo;
+        for (size_t i = 0; i < (size_t)(w * h); i++) {
+            disp->tmpbuf[i * 2] = (uint8_t)(color >> 8);
+            disp->tmpbuf[i * 2 + 1] = (uint8_t)(color & 0xFF);
         }
         set_window(disp, x, y, x + w - 1, y + h - 1);
-        dat_buf(disp, disp->tmpbuf, pixels * 2);
+        dat_buf(disp, disp->tmpbuf, (size_t)(w * h) * 2);
     }
 }
 
@@ -588,30 +615,35 @@ static const uint8_t font5x7[] = {
     0x08, 0x08, 0x2A, 0x1C, 0x08, /* 126 ~ */
 };
 
+static inline int st7735_char_space(st7735_t *disp, int x, int y, uint16_t bg, int char_height, int spacing) {
+    for (int i = 0; i < spacing; i++, x++)
+        for (int j = 0; j < char_height; j++)
+            st7735_pixel(disp, x, y + j, bg);
+    return spacing;
+}
+
 int st7735_char(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, char c) {
     if (c < 32 || c > 126)
         c = '?';
-    const uint8_t *glyph = &font5x7[(c - 32) * 5];
-    for (int col = 0; col < 5; col++)
-        for (int row = 0; row < 7; row++)
-            if (glyph[col] & (1 << row))
-                st7735_pixel(disp, x + col, y + row, fg);
-            else if (bg != fg)
-                st7735_pixel(disp, x + col, y + row, bg);
-    /* 1 pixel gap after char */
-    if (bg != fg)
-        for (int row = 0; row < 7; row++)
-            st7735_pixel(disp, x + 5, y + row, bg);
-    return 5;
+    const int char_height = 7, char_offs = c - 32, char_width = 5;
+    for (int i = 0; i < char_width; i++) {
+        const uint8_t char_byte = font5x7[char_offs * char_width + i];
+        for (int j = 0; j < char_height; j++)
+            st7735_pixel(disp, x + i, y + j, (char_byte & (1 << j)) ? fg : bg);
+    }
+    return char_width;
 }
 
 int st7735_text(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, int spacing, const char *str) {
     if (!str)
         return 0;
-    const int start_x = x;
-    while (*str)
-        x += st7735_char(disp, x, y, fg, bg, *str++) + spacing;
-    return x - start_x;
+    const int x_start = x;
+    const int char_height = 7;
+    while (*str) {
+        x += st7735_char(disp, x, y, fg, bg, *str++);
+        x += st7735_char_space(disp, x, y, bg, char_height, spacing);
+    }
+    return x - x_start;
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
@@ -621,23 +653,18 @@ int st7735_text(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, int spac
 int st7735_char_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, const fontinfo_t *font, bool mono, char c) {
     if (!font || !font->data)
         return 0;
-    if (c < font->base)
-        return 0;
-    const int font_rows = (font->height + 7) / 8;
-    const int char_offs = ((font->width * font_rows) + 1) * (c - font->base);
+    if (c < font->base || c > font->limit)
+        c = '?';
+    const int char_height = (font->height + 7) / 8;
+    const int char_offs = ((font->width * char_height) + 1) * (c - font->base);
     const int char_width = mono ? font->width : (int)font->data[char_offs];
     for (int i = 0; i < char_width; i++) {
-        for (int j = 0; j < font_rows; j++) {
-            const uint8_t char_byte = font->data[(char_offs + 1) + (i * font_rows) + j];
+        for (int j = 0; j < char_height; j++) {
+            const uint8_t char_byte = font->data[(char_offs + 1) + (i * char_height) + j];
             for (int k = 0; k < 8; k++) {
-                const int py = y + (j * 8) + k;
-                if (py >= y + font->height)
+                if ((j * 8) + k >= font->height)
                     break;
-                if (char_byte & (1 << k)) {
-                    st7735_pixel(disp, x + i, py, fg);
-                } else {
-                    st7735_pixel(disp, x + i, py, bg);
-                }
+                st7735_pixel(disp, x + i, y + (j * 8) + k, (char_byte & (1 << k)) ? fg : bg);
             }
         }
     }
@@ -647,10 +674,13 @@ int st7735_char_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, con
 int st7735_text_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, const fontinfo_t *font, bool mono, int spacing, const char *str) {
     if (!font || !font->data || !str)
         return 0;
-    const int start_x = x;
-    while (*str)
-        x += st7735_char_font(disp, x, y, fg, bg, font, mono, *str++) + spacing;
-    return x - start_x;
+    const int x_start = x;
+    const int char_height = (font->height + 7) / 8;
+    while (*str) {
+        x += st7735_char_font(disp, x, y, fg, bg, font, mono, *str++);
+        x += st7735_char_space(disp, x, y, bg, char_height, spacing);
+    }
+    return x - x_start;
 }
 
 #endif
