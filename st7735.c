@@ -609,6 +609,8 @@ int st7735_text(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, int spac
 
 // ------------------------------------------------------------------------------------------------------------------------
 
+#ifdef ST7735_EXTERNAL_FONTS
+
 int st7735_char_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, const fontinfo_t *font, bool mono, char c) {
     if (!font || !font->data)
         return 0;
@@ -643,6 +645,8 @@ int st7735_text_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, con
         x += st7735_char_font(disp, x, y, fg, bg, font, mono, *str++) + spacing;
     return x - start_x;
 }
+
+#endif
 
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------

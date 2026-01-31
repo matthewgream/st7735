@@ -7,7 +7,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef ST7735_EXTERNAL_FONTS
 #include "fonts.h"
+#endif
 
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
@@ -79,11 +81,15 @@ int st7735_char(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, char c);
 /* Draw string (built-in 5x7 font) - returns total width drawn */
 int st7735_text(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, int spacing, const char *str);
 
+#ifdef ST7735_EXTERNAL_FONTS
+
 /* Draw character (external font via fontinfo_t) - returns width drawn */
 int st7735_char_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, const fontinfo_t *font, bool mono, char c);
 
 /* Draw string (external font via fontinfo_t) - returns total width drawn */
 int st7735_text_font(st7735_t *disp, int x, int y, uint16_t fg, uint16_t bg, const fontinfo_t *font, bool mono, int spacing, const char *str);
+
+#endif
 
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------

@@ -143,6 +143,8 @@ int main(int argc, char *argv[]) {
         st7735_flush(disp);
     sleep(3);
 
+#ifdef ST7735_EXTERNAL_FONTS
+
     /* Test 9: External font - 6x10 small */
     printf("[9] External font - Noto Mono 6x10\n");
     st7735_fill(disp, COLOR_BLACK);
@@ -193,6 +195,8 @@ int main(int argc, char *argv[]) {
     if (use_buffer)
         st7735_flush(disp);
     sleep(3);
+
+#endif
 
     printf("\n=== Test Complete ===\n");
     st7735_close(disp);

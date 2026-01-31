@@ -1,5 +1,6 @@
 
 CC=gcc
+CDEFS=-DST7735_EXTERNAL_FONTS
 CFLAGS_COMMON=-Wall -Wextra -Wpedantic
 CFLAGS_STRICT=-Werror -Wcast-align -Wcast-qual \
 	-Wstrict-prototypes \
@@ -14,7 +15,7 @@ CFLAGS_STRICT=-Werror -Wcast-align -Wcast-qual \
 	-Wswitch-enum -Wundef \
 	-Wunreachable-code -Wunused \
 	-Wwrite-strings
-CFLAGS=$(CFLAGS_COMMON) $(CFLAGS_STRICT) -O3 -fstack-protector-strong
+CFLAGS=$(CDEFS) $(CFLAGS_COMMON) $(CFLAGS_STRICT) -O3 -fstack-protector-strong
 LDFLAGS = -lm
 
 SRCS = st7735.c fonts.c
@@ -39,6 +40,6 @@ st7735.o: st7735.c st7735.h
 fonts.o: fonts.c fonts.h
 
 clean:
-	rm -f test *.o
+	rm -f test mock *.o
 
 .PHONY: all clean
