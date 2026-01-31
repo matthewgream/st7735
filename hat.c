@@ -1,0 +1,350 @@
+
+/*
+ * hat.c - Automation HAT Mini driver for Raspberry Pi
+ *   - 3x Analog inputs (via ADS1015 I2C ADC)
+ *   - 3x Digital inputs (GPIO)
+ *   - 3x Digital outputs (GPIO)
+ *   - 1x Relay (GPIO)
+ */
+
+#include "hat.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/ioctl.h>
+#include <linux/i2c-dev.h>
+
+/* ============================================================================
+ * CONFIGURATION
+ * ============================================================================ */
+
+#define INPUT_1     26
+#define INPUT_2     20
+#define INPUT_3     21
+
+#define OUTPUT_1    5
+#define OUTPUT_2    12
+#define OUTPUT_3    6
+
+#define RELAY_1     16
+
+#define ADS1015_ADDR        0x48
+#define ADS1015_REG_CONV    0x00
+#define ADS1015_REG_CONFIG  0x01
+
+#define ADS1015_OS_SINGLE   0x8000  /* Start single conversion */
+#define ADS1015_MUX_AIN0    0x4000  /* AIN0 vs GND */
+#define ADS1015_MUX_AIN1    0x5000  /* AIN1 vs GND */
+#define ADS1015_MUX_AIN2    0x6000  /* AIN2 vs GND */
+#define ADS1015_MUX_AIN3    0x7000  /* AIN3 vs GND */
+#define ADS1015_PGA_4V      0x0200  /* +/- 4.096V range */
+#define ADS1015_MODE_SINGLE 0x0100  /* Single-shot mode */
+#define ADS1015_DR_1600     0x0080  /* 1600 samples/sec */
+#define ADS1015_COMP_DIS    0x0003  /* Disable comparator */
+#define ADS1015_CONFIG_BASE (ADS1015_OS_SINGLE | ADS1015_PGA_4V | \
+                             ADS1015_MODE_SINGLE | ADS1015_DR_1600 | \
+                             ADS1015_COMP_DIS)
+
+/* Voltage scaling: ADC reads 0-3.3V, inputs are 0-25.85V */
+#define ANALOG_MAX_VOLTAGE  25.85f
+#define ADC_REF_VOLTAGE     3.3f
+#define ADC_PGA_VOLTAGE     4.096f
+
+#define GPIO_FSEL0      0   /* Function select registers */
+#define GPIO_SET0       7   /* Set output high */
+#define GPIO_CLR0       10  /* Set output low */
+#define GPIO_LEV0       13  /* Read level */
+
+/* ============================================================================
+ * AUTOMATION HAT STRUCTURE
+ * ============================================================================ */
+
+typedef struct {
+    int gpio_fd;
+    volatile uint32_t *gpio;
+    int i2c_fd;
+} automationhat_t;
+
+static automationhat_t ah = { .gpio_fd = -1, .i2c_fd = -1 };
+
+/* ============================================================================
+ * LOW-LEVEL GPIO
+ * ============================================================================ */
+
+static inline void gpio_set_input(int pin) {
+    const int reg = pin / 10, shift = (pin % 10) * 3;
+    ah.gpio[reg] &= (uint32_t) ~(7 << shift);  /* 000 = input */
+}
+static inline void gpio_set_output(int pin) {
+    const int reg = pin / 10, shift = (pin % 10) * 3;
+    ah.gpio[reg] = (ah.gpio[reg] & (uint32_t) ~(7 << shift)) | (1 << shift);  /* 001 = output */
+}
+static inline bool gpio_read(int pin) {
+    return (ah.gpio[GPIO_LEV0] & (1 << pin)) != 0;
+}
+static inline void gpio_write(int pin, bool value) {
+    ah.gpio[value ? GPIO_SET0 : GPIO_CLR0] = 1 << pin;
+}
+
+/* ============================================================================
+ * LOW-LEVEL I2C / ADS1015
+ * ============================================================================ */
+
+static inline int i2c_write_reg16(uint8_t reg, uint16_t value) {
+    const uint8_t buf[3] = { reg, (uint8_t)((value >> 8) & 0xFF), (uint8_t) (value & 0xFF) };
+    return (int) write(ah.i2c_fd, buf, sizeof (buf));
+}
+static inline int16_t i2c_read_reg16(uint8_t reg) {
+    uint8_t buf[2];
+    if (write(ah.i2c_fd, &reg, 1) != 1)
+        return -1;
+    if (read(ah.i2c_fd, buf, 2) != 2)
+        return -1;
+    return (int16_t)((buf[0] << 8) | buf[1]);
+}
+static float ads1015_read_channel(int channel) {
+    uint16_t mux;
+    switch (channel) {
+        case 0: mux = ADS1015_MUX_AIN0; break;
+        case 1: mux = ADS1015_MUX_AIN1; break;
+        case 2: mux = ADS1015_MUX_AIN2; break;
+        case 3: mux = ADS1015_MUX_AIN3; break;
+        default: return -1.0f;
+    }
+    i2c_write_reg16(ADS1015_REG_CONFIG, ADS1015_CONFIG_BASE | mux);
+    /* Wait for conversion (1600 SPS = ~0.625ms per sample) */
+    usleep(1000);
+    /* ADS1015 is 12-bit, left-aligned in 16-bit register */
+    /* Convert to voltage (with PGA = 4.096V) */
+    return (float)(i2c_read_reg16(ADS1015_REG_CONV) >> 4) * ADC_PGA_VOLTAGE / 2048.0f;
+}
+
+/* ============================================================================
+ * PUBLIC API - SETUP/CLEANUP
+ * ============================================================================ */
+
+int automationhat_init(void) {
+
+    ah.gpio_fd = open("/dev/gpiomem", O_RDWR | O_SYNC);
+    if (ah.gpio_fd < 0) {
+        perror("failed to open /dev/gpiomem");
+        return -1;
+    }
+    ah.gpio = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, ah.gpio_fd, 0);
+    if (ah.gpio == MAP_FAILED) {
+        perror("failed to mmap GPIO");
+        close(ah.gpio_fd);
+        return -1;
+    }
+
+    ah.i2c_fd = open("/dev/i2c-1", O_RDWR);
+    if (ah.i2c_fd < 0) {
+        perror("failed to open /dev/i2c-1");
+        goto failed_mmap;
+    }
+    if (ioctl(ah.i2c_fd, I2C_SLAVE, ADS1015_ADDR) < 0) {
+        perror("failed to set I2C address");
+        close(ah.i2c_fd);
+        goto failed_mmap;
+    }
+    
+    gpio_set_input(INPUT_1);
+    gpio_set_input(INPUT_2);
+    gpio_set_input(INPUT_3);
+    
+    gpio_set_output(OUTPUT_1);
+    gpio_set_output(OUTPUT_2);
+    gpio_set_output(OUTPUT_3);
+    
+    gpio_set_output(RELAY_1);
+    
+    gpio_write(OUTPUT_1, false);
+    gpio_write(OUTPUT_2, false);
+    gpio_write(OUTPUT_3, false);
+    gpio_write(RELAY_1, false);
+
+    return 0;
+
+failed_mmap:
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-qual"
+    munmap((void *)ah.gpio, 4096);
+#pragma GCC diagnostic pop
+    close(ah.gpio_fd);
+    return -1;
+}
+
+void automationhat_close(void) {
+    
+    gpio_write(OUTPUT_1, false);
+    gpio_write(OUTPUT_2, false);
+    gpio_write(OUTPUT_3, false);
+    gpio_write(RELAY_1, false);
+    
+    if (ah.i2c_fd >= 0) {
+        close(ah.i2c_fd);
+        ah.i2c_fd = -1;
+    }
+    
+    if (ah.gpio != NULL && ah.gpio != MAP_FAILED) {
+        munmap((void *)(uintptr_t)ah.gpio, 4096);
+        ah.gpio = NULL;
+    }
+    if (ah.gpio_fd >= 0) {
+        close(ah.gpio_fd);
+        ah.gpio_fd = -1;
+    }
+}
+
+/* ============================================================================
+ * PUBLIC API - ANALOG INPUTS
+ * ============================================================================ */
+
+float analog_read(int channel) {
+    if (channel < 0 || channel > 2)
+        return -1.0f;
+    /* Scale from ADC voltage (0-3.3V) to input voltage (0-25.85V) */
+    return (ads1015_read_channel(channel) / ADC_REF_VOLTAGE) * ANALOG_MAX_VOLTAGE;
+}
+
+/* ============================================================================
+ * PUBLIC API - DIGITAL INPUTS
+ * ============================================================================ */
+
+static const int input_pins[] = { INPUT_1, INPUT_2, INPUT_3 };
+bool input_read(int channel) {
+    if (channel < 0 || channel > 2)
+        return false;
+    return gpio_read(input_pins[channel]);
+}
+bool input_is_on(int channel) {
+    return input_read(channel);
+}
+bool input_is_off(int channel) {
+    return !input_read(channel);
+}
+
+/* ============================================================================
+ * PUBLIC API - DIGITAL OUTPUTS
+ * ============================================================================ */
+
+static const int output_pins[] = { OUTPUT_1, OUTPUT_2, OUTPUT_3 };
+void output_write(int channel, bool value) {
+    if (channel < 0 || channel > 2)
+        return;
+    gpio_write(output_pins[channel], value);
+}
+void output_on(int channel) {
+    output_write(channel, true);
+}
+void output_off(int channel) {
+    output_write(channel, false);
+}
+void output_toggle(int channel) {
+    if (channel < 0 || channel > 2)
+        return;
+    gpio_write(output_pins[channel], !gpio_read(output_pins[channel]));
+}
+bool output_read(int channel) {
+    if (channel < 0 || channel > 2)
+        return false;
+    return gpio_read(output_pins[channel]);
+}
+bool output_is_on(int channel) {
+    return output_read(channel);
+}
+bool output_is_off(int channel) {
+    return !output_read(channel);
+}
+
+/* ============================================================================
+ * PUBLIC API - RELAY
+ * ============================================================================ */
+
+void relay_write(bool value) {
+    gpio_write(RELAY_1, value);
+}
+void relay_on(void) {
+    relay_write(true);
+}
+void relay_off(void) {
+    relay_write(false);
+}
+void relay_toggle(void) {
+    bool current = gpio_read(RELAY_1);
+    gpio_write(RELAY_1, !current);
+}
+bool relay_read(void) {
+    return gpio_read(RELAY_1);
+}
+bool relay_is_on(void) {
+    return relay_read();
+}
+bool relay_is_off(void) {
+    return !relay_read();
+}
+
+/* ============================================================================
+ * MAIN - TEST/DEMO
+ * ============================================================================ */
+
+int main(void) {
+
+    printf("Automation HAT Mini - C Driver Test\n");
+    printf("====================================\n\n");
+    
+    if (automationhat_init() < 0) {
+        fprintf(stderr, "Failed to initialize Automation HAT\n");
+        return 1;
+    }
+    
+    printf("Initialized. Press Ctrl+C to exit.\n\n");
+    
+    int cycle = 0;
+    
+    while (1) {
+
+        printf("ANALOG:  ");
+        for (int ch = 0; ch < 3; ch++)
+            printf("CH%d=%.2fV  ", ch + 1, analog_read(ch));
+        printf("\n");
+        
+        printf("INPUT:   ");
+        for (int ch = 0; ch < 3; ch++)
+            printf("CH%d=%s   ", ch + 1, input_is_on(ch) ? "ON " : "OFF");
+        printf("\n");
+        
+        const int active_output = cycle % 6;  /* 0-2 = on, 3-5 = off cycle */
+        if (active_output < 3)
+            output_on(active_output);
+        else
+            output_off(active_output - 3);
+        
+        printf("OUTPUT:  ");
+        for (int ch = 0; ch < 3; ch++)
+            printf("CH%d=%s   ", ch + 1, output_is_on(ch) ? "ON " : "OFF");
+        printf("\n");
+        
+        /* Toggle relay every 2 cycles */
+        if (cycle % 2 == 0)
+            relay_toggle();
+        
+        printf("RELAY:   %s\n", relay_is_on() ? "ON" : "OFF");
+        
+        printf("---\n");
+        
+        cycle++;
+        sleep(1);
+    }
+    
+    automationhat_close();
+
+    return 0;
+}
+

@@ -21,11 +21,13 @@ LDFLAGS = -lm
 SRCS = st7735.c fonts.c
 OBJS = $(SRCS:.c=.o)
 
-all: test mock
+all: test mock hat
 
 test: test.o $(OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 mock: mock.o $(OBJS)
+	$(CC) -o $@ $^ $(LDFLAGS)
+hat: hat.o $(OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c
