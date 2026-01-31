@@ -213,7 +213,7 @@ st7735_t *st7735_init(int pin_dc, int pin_bl, int rotation) {
     st7735_t *disp = calloc(1, sizeof(st7735_t));
     if (!disp) {
         perror("calloc");
-        return NULL;
+        goto failed;
     }
 
     disp->pin_dc = (uint8_t)pin_dc;
@@ -239,7 +239,7 @@ st7735_t *st7735_init(int pin_dc, int pin_bl, int rotation) {
     if (!disp->tmpbuf) {
         perror("malloc");
         free(disp);
-        return NULL;
+        goto failed;
     }
 
     gpio_set_output(pin_dc);
@@ -249,6 +249,11 @@ st7735_t *st7735_init(int pin_dc, int pin_bl, int rotation) {
     init_seq(disp);
 
     return disp;
+
+failed:
+    gpio_close();
+    spi_close();
+    return NULL;
 }
 
 // ------------------------------------------------------------------------------------------------------------------------
