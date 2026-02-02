@@ -32,11 +32,11 @@ endif
 
 OBJS = $(SRCS:.c=.o)
 
-all: test_st7735 mock test_automationhat
+all: test_st7735 mock_st7735 test_automationhat
 
 test_st7735: test_st7735.o $(OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
-mock: mock.o $(OBJS)
+mock_st7735: mock_st7735.o $(OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 test_automationhat: test_automationhat.o automationhat.o $(OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
@@ -47,14 +47,14 @@ test_automationhat: test_automationhat.o automationhat.o $(OBJS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Dependencies
-test_st7735.o: test_st7735.c st7735.h fonts.h
-mock.o: mock.c st7735.h fonts.h
-st7735.o: st7735.c st7735.h hardware.h
 fonts.o: fonts.c fonts.h
+st7735.o: st7735.c st7735.h hardware.h
+test_st7735.o: test_st7735.c st7735.h fonts.h
+mock_st7735.o: mock_st7735.c st7735.h fonts.h
 test_automationhat.o: test_automationhat.c automationhat.h hardware.h
 automationhat.o: automationhat.h hardware.h
 
 clean:
-	rm -f test_st7735 mock test_automationhat *.o
+	rm -f test_st7735 mock_st7735 test_automationhat *.o
 
 .PHONY: all clean
