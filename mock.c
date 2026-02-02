@@ -1,10 +1,10 @@
 
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
-#include <time.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "fonts.h"
 #include "st7735.h"

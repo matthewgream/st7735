@@ -9,4 +9,5 @@ AllowShortFunctionsOnASingleLine: None
 AllowShortBlocksOnASingleLine: Never
 AlignConsecutiveMacros: Consecutive
 AlignArrayOfStructures: Left
+SortIncludes: false
 ---

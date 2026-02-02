@@ -5,18 +5,19 @@
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------
 
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <unistd.h>
+
+#include <sys/ioctl.h>
+#include <sys/mman.h>
 
 #include <linux/i2c-dev.h>
 #include <linux/spi/spidev.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
 
 // ------------------------------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------------------------------

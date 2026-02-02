@@ -26,30 +26,28 @@ int main(void) {
 
         printf("ANALOG:  ");
         for (int ch = 0; ch < 3; ch++)
-            printf("CH%d=%.2fV  ", ch + 1, analog_read(ch));
+            printf("CH%d=%.2fV  ", ch + 1, automationhat_analog_read(ch));
         printf("\n");
 
         printf("INPUT:   ");
         for (int ch = 0; ch < 3; ch++)
-            printf("CH%d=%s   ", ch + 1, input_is_on(ch) ? "ON " : "OFF");
+            printf("CH%d=%s   ", ch + 1, automationhat_input_is_on(ch) ? "ON " : "OFF");
         printf("\n");
 
         const int active_output = cycle % 6; /* 0-2 = on, 3-5 = off cycle */
         if (active_output < 3)
-            output_on(active_output);
+            automationhat_output_on(active_output);
         else
-            output_off(active_output - 3);
-
+            automationhat_output_off(active_output - 3);
         printf("OUTPUT:  ");
         for (int ch = 0; ch < 3; ch++)
-            printf("CH%d=%s   ", ch + 1, output_is_on(ch) ? "ON " : "OFF");
+            printf("CH%d=%s   ", ch + 1, automationhat_output_is_on(ch) ? "ON " : "OFF");
         printf("\n");
 
         /* Toggle relay every 2 cycles */
         if (cycle % 2 == 0)
-            relay_toggle();
-
-        printf("RELAY:   %s\n", relay_is_on() ? "ON" : "OFF");
+            automationhat_relay_toggle();
+        printf("RELAY:   %s\n", automationhat_relay_is_on() ? "ON" : "OFF");
 
         printf("---\n");
 

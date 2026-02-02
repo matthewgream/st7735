@@ -7,16 +7,16 @@
  *   - 1x Relay (GPIO)
  */
 
-#include <fcntl.h>
-#include <stdbool.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
 
-#include "automationhat.h"
 #include "hardware.h"
+#include "automationhat.h"
 
 /* ============================================================================
  * CONFIGURATION
@@ -120,7 +120,7 @@ void automationhat_term(void) {
  * PUBLIC API - ANALOG INPUTS
  * ============================================================================ */
 
-float analog_read(int channel) {
+float automationhat_analog_read(int channel) {
     if (channel < 0 || channel > 2)
         return -1.0f;
     /* Scale from ADC voltage (0-3.3V) to input voltage (0-25.85V) */
@@ -132,16 +132,10 @@ float analog_read(int channel) {
  * ============================================================================ */
 
 static const int input_pins[] = { INPUT_1, INPUT_2, INPUT_3 };
-bool input_read(int channel) {
+bool automationhat_input_read(int channel) {
     if (channel < 0 || channel > 2)
         return false;
     return gpio_read(input_pins[channel]);
-}
-bool input_is_on(int channel) {
-    return input_read(channel);
-}
-bool input_is_off(int channel) {
-    return !input_read(channel);
 }
 
 /* ============================================================================
@@ -149,56 +143,32 @@ bool input_is_off(int channel) {
  * ============================================================================ */
 
 static const int output_pins[] = { OUTPUT_1, OUTPUT_2, OUTPUT_3 };
-void output_write(int channel, bool value) {
+void automationhat_output_write(int channel, bool value) {
     if (channel < 0 || channel > 2)
         return;
     gpio_write(output_pins[channel], value);
 }
-void output_on(int channel) {
-    output_write(channel, true);
-}
-void output_off(int channel) {
-    output_write(channel, false);
-}
-void output_toggle(int channel) {
+void automationhat_output_toggle(int channel) {
     if (channel < 0 || channel > 2)
         return;
     gpio_write(output_pins[channel], !gpio_read(output_pins[channel]));
 }
-bool output_read(int channel) {
+bool automationhat_output_read(int channel) {
     if (channel < 0 || channel > 2)
         return false;
     return gpio_read(output_pins[channel]);
-}
-bool output_is_on(int channel) {
-    return output_read(channel);
-}
-bool output_is_off(int channel) {
-    return !output_read(channel);
 }
 
 /* ============================================================================
  * PUBLIC API - RELAY
  * ============================================================================ */
 
-void relay_write(bool value) {
+void automationhat_relay_write(bool value) {
     gpio_write(RELAY_1, value);
 }
-void relay_on(void) {
-    relay_write(true);
-}
-void relay_off(void) {
-    relay_write(false);
-}
-void relay_toggle(void) {
+void automationhat_relay_toggle(void) {
     gpio_write(RELAY_1, !gpio_read(RELAY_1));
 }
-bool relay_read(void) {
+bool automationhat_relay_read(void) {
     return gpio_read(RELAY_1);
-}
-bool relay_is_on(void) {
-    return relay_read();
-}
-bool relay_is_off(void) {
-    return !relay_read();
 }
