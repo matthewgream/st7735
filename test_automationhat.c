@@ -57,7 +57,7 @@ int main(void) {
         sleep(1);
     }
 
-    automationhat_close();
+    automationhat_term();
 
     return 0;
 }

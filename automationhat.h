@@ -9,9 +9,7 @@
 
 /* Initialize the Automation HAT. Returns 0 on success, -1 on failure. */
 int automationhat_init(void);
-
-/* Close and release all resources */
-void automationhat_close(void);
+void automationhat_term(void);
 
 /* ============================================================================
  * ANALOG INPUTS (3 channels: 0, 1, 2)

@@ -104,7 +104,7 @@ int automationhat_init(void) {
     return 0;
 }
 
-void automationhat_close(void) {
+void automationhat_term(void) {
 
     gpio_write(OUTPUT_1, false);
     gpio_write(OUTPUT_2, false);
