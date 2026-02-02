@@ -1,6 +1,7 @@
 
 CC=gcc
-CDEFS=-DST7735_EXTERNAL_FONTS -DST7735_IMAGE_SUPPORT_BMP -DST7735_IMAGE_SUPPORT_PNG -DST7735_IMAGE_SUPPORT_JPG -DST7735_IMAGE_SUPPORT_BASE64
+# CDEFS=-DST7735_EXTERNAL_FONTS -DST7735_IMAGE_SUPPORT_BMP -DST7735_IMAGE_SUPPORT_PNG -DST7735_IMAGE_SUPPORT_JPG -DST7735_IMAGE_SUPPORT_BASE64
+CDEFS=-DST7735_EXTERNAL_FONTS
 CFLAGS_COMMON=-Wall -Wextra -Wpedantic
 CFLAGS_STRICT=-Werror -Wcast-align -Wcast-qual \
 	-Wstrict-prototypes \
@@ -31,13 +32,13 @@ endif
 
 OBJS = $(SRCS:.c=.o)
 
-all: test mock hat
+all: test_st7735 mock test_automationhat
 
-test: test.o $(OBJS)
+test_st7735: test_st7735.o $(OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 mock: mock.o $(OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
-hat: hat.o $(OBJS)
+test_automationhat: test_automationhat.o automationhat.o $(OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c
@@ -46,13 +47,14 @@ hat: hat.o $(OBJS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Dependencies
-test.o: test.c st7735.h fonts.h
+test_st7735.o: test_st7735.c st7735.h fonts.h
 mock.o: mock.c st7735.h fonts.h
 st7735.o: st7735.c st7735.h hardware.h
 fonts.o: fonts.c fonts.h
-hat.o: hat.c hat.h hardware.h
+test_automationhat.o: test_automationhat.c automationhat.h hardware.h
+automationhat.o: automationhat.h hardware.h
 
 clean:
-	rm -f hat test mock *.o
+	rm -f test_st7735 mock test_automationhat *.o
 
 .PHONY: all clean

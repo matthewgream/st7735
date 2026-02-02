@@ -1,4 +1,4 @@
 *.o
-test
+test_st7735
+test_automationhat
 mock
-hat
